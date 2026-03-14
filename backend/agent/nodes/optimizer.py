@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 
 import structlog
 
@@ -9,6 +10,50 @@ from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
 from services.github_service import read_file
 
 log = structlog.get_logger()
+
+MIN_SIZE_RATIO = 0.25
+DESTRUCTIVE_PATTERNS = [
+    re.compile(r"^\s*(return\s+(null|undefined|None|void|0|''|\"\"|false|\[\]|\{\})\s*;?\s*)$", re.MULTILINE),
+    re.compile(r"^\s*(pass\s*)$", re.MULTILINE),
+]
+
+
+def _is_destructive_change(change: OptimizationChange) -> bool:
+    """Detect when an 'optimization' guts or trivializes a function.
+
+    Returns True if the optimized snippet is suspiciously shorter than the
+    original, or consists entirely of no-op / trivial return statements.
+    """
+    orig = change.original_snippet.strip()
+    opt = change.optimized_snippet.strip()
+
+    if not opt:
+        return True
+
+    if len(orig) > 20 and len(opt) / len(orig) < MIN_SIZE_RATIO:
+        log.warning(
+            "optimization_suspiciously_short",
+            function=change.function_name,
+            file=change.file,
+            original_len=len(orig),
+            optimized_len=len(opt),
+            ratio=round(len(opt) / len(orig), 2),
+        )
+        return True
+
+    opt_lines = [line.strip() for line in opt.splitlines() if line.strip()]
+    if len(opt_lines) <= 2:
+        for pattern in DESTRUCTIVE_PATTERNS:
+            if all(pattern.match(line) for line in opt_lines):
+                log.warning(
+                    "optimization_trivial_noop",
+                    function=change.function_name,
+                    file=change.file,
+                    optimized_snippet=opt[:200],
+                )
+                return True
+
+    return False
 
 OPTIMIZER_PROMPT = """You are an elite performance optimization engineer. Given:
 1. A performance bottleneck with severity and reasoning
@@ -199,10 +244,20 @@ Optimize the bottleneck functions in this file."""
         plan: OptimizationPlan = result.output  # type: ignore[assignment]
 
         optimized = file_content
+        accepted_changes: list[OptimizationChange] = []
         for change in plan.changes:
+            if _is_destructive_change(change):
+                log.warning(
+                    "optimization_rejected_destructive",
+                    file=change.file,
+                    function=change.function_name,
+                    explanation=change.explanation[:200],
+                )
+                continue
             optimized = optimized.replace(change.original_snippet, change.optimized_snippet)
+            accepted_changes.append(change)
 
-        for change in plan.changes:
+        for change in accepted_changes:
             log.info(
                 "optimization_change",
                 file=change.file,
@@ -211,7 +266,16 @@ Optimize the bottleneck functions in this file."""
                 expected_improvement=change.expected_improvement,
             )
 
-        return file_path, plan.changes, optimized
+        if len(accepted_changes) < len(plan.changes):
+            log.info(
+                "optimization_changes_filtered",
+                file=file_path,
+                total=len(plan.changes),
+                accepted=len(accepted_changes),
+                rejected=len(plan.changes) - len(accepted_changes),
+            )
+
+        return file_path, accepted_changes, optimized
     except Exception as e:
         log.error("optimize_file_failed", file=file_path, error=str(e))
         return file_path, [], file_content

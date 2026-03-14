@@ -14,9 +14,33 @@ log = structlog.get_logger()
 MAX_BENCH_RETRIES = 2
 
 
+SUSPECT_TIME_THRESHOLD_MS = 0.001
+
+
 def _is_failed_result(result: dict) -> bool:
-    """A benchmark result counts as failed if it produced no usable timing data."""
-    return result.get("avg_time_ms", 0) == 0 and result.get("iterations", 0) == 0
+    """A benchmark result counts as failed if it produced no usable timing data.
+
+    Catches three cases:
+    1. Script crashed (both time and iterations are 0)
+    2. Script ran but reported 0ms with iterations > 0 (dead code elimination)
+    3. Script reported a sub-microsecond time that's below measurement resolution
+    """
+    avg_time = result.get("avg_time_ms", 0)
+    iterations = result.get("iterations", 0)
+
+    if avg_time == 0 and iterations == 0:
+        return True
+
+    if iterations > 0 and avg_time < SUSPECT_TIME_THRESHOLD_MS:
+        log.warning(
+            "benchmark_suspect_zero_time",
+            function=result.get("function_name", "unknown"),
+            avg_time_ms=avg_time,
+            iterations=iterations,
+        )
+        return True
+
+    return False
 
 
 async def _regenerate_benchmark(

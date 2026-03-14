@@ -77,10 +77,58 @@ INPUT SIZE — THIS IS CRITICAL:
 - For string operations: use strings of 10 000+ characters.
 - NEVER use trivially small inputs (N < 100). Small inputs hide algorithmic improvements
   behind constant-factor overhead and produce misleading benchmark results.
-- Run at least 50 iterations to get a stable average.
 - TOTAL SCRIPT EXECUTION MUST COMPLETE WITHIN 30 SECONDS. If the function is slow,
   reduce the number of iterations (minimum 5) or input size until total runtime stays under 30s.
   Use a warm-up call to estimate per-call cost, then choose iterations accordingly.
+
+## PREVENTING DEAD CODE ELIMINATION (CRITICAL)
+
+JavaScript V8 and Python compilers aggressively optimize away function calls whose return
+values are never used. If you do NOT follow these rules, your benchmark will report 0.00ms
+because the engine literally deletes the code.
+
+1. ALWAYS capture the return value of EVERY function call inside the timing loop.
+2. Accumulate results into a variable that PERSISTS across iterations (e.g. a checksum,
+   an XOR hash, or append to an array).
+3. AFTER the timing loop, PRINT or USE the accumulated result so the engine cannot
+   prove the computation is dead.
+
+### JavaScript anti-DCE pattern (REQUIRED):
+```javascript
+let _checksum = 0;
+const start = performance.now();
+for (let i = 0; i < iterations; i++) {
+    const result = targetFunction(testData);
+    _checksum += (typeof result === 'object' ? JSON.stringify(result).length : Number(result)) || 1;
+}
+const elapsed = performance.now() - start;
+// Anti-DCE anchor — do NOT remove
+if (_checksum === -Infinity) console.log(_checksum);
+```
+
+### Python anti-DCE pattern (REQUIRED):
+```python
+_checksum = 0
+start = time.perf_counter()
+for _ in range(iterations):
+    result = target_function(test_data)
+    _checksum += len(str(result)) if result is not None else 1
+elapsed = time.perf_counter() - start
+# Anti-DCE anchor
+assert _checksum >= 0, _checksum
+```
+
+## DYNAMIC ITERATION SCALING (REQUIRED)
+
+Do NOT hardcode the number of iterations. Use this pattern:
+1. Run the function ONCE as a warmup and measure the single-call time.
+2. If single_call < 0.1ms: use 10,000 iterations
+3. If single_call < 1ms: use 5,000 iterations
+4. If single_call < 10ms: use 500 iterations
+5. If single_call < 100ms: use 50 iterations
+6. If single_call >= 100ms: use 10 iterations
+7. Ensure total estimated runtime stays under 25 seconds.
+8. The reported avg_time_ms MUST be > 0.001. If it rounds to 0, increase input size.
 
 For Python: Use time.perf_counter() for timing. Copy the target function into the script,
 set up realistic-sized test data (see INPUT SIZE above), and measure execution time.
