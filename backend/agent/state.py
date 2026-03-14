@@ -18,6 +18,7 @@ class AgentState(TypedDict, total=False):
     triage_result: dict[str, Any]
     comparison: dict[str, Any]
     correctness_failures: list[dict[str, Any]]
+    benchmark_details: list[dict[str, Any]]
     pr_url: str
     messages: list[str]
     error: str | None

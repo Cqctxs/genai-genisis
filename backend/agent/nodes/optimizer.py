@@ -8,7 +8,6 @@ from pydantic_ai import Agent
 from agent.schemas import AnalysisResult, Hotspot, OptimizationChange, OptimizationPlan
 from agent.state import AgentState
 from services.gemini_service import (
-    GEMINI_FLASH,
     GEMINI_PRO,
     PRO_SETTINGS,
     run_agent_logged,
@@ -19,7 +18,10 @@ log = structlog.get_logger()
 
 MIN_SIZE_RATIO = 0.25
 DESTRUCTIVE_PATTERNS = [
-    re.compile(r"^\s*(return\s+(null|undefined|None|void|0|''|\"\"|false|\[\]|\{\})\s*;?\s*)$", re.MULTILINE),
+    re.compile(
+        r"^\s*(return\s+(null|undefined|None|void|0|''|\"\"|false|\[\]|\{\})\s*;?\s*)$",
+        re.MULTILINE,
+    ),
     re.compile(r"^\s*(pass\s*)$", re.MULTILINE),
 ]
 
@@ -60,6 +62,7 @@ def _is_destructive_change(change: OptimizationChange) -> bool:
                 return True
 
     return False
+
 
 OPTIMIZER_PROMPT = """You are an elite performance optimization engineer. Your goal is to improve performance while ensuring absolute functional parity. Given:
 1. A performance bottleneck with severity and reasoning
@@ -171,7 +174,7 @@ not just different from your last attempt.
 """
 
 
-def _create_optimizer_agent() -> Agent:
+def _create_optimizer_agent() -> Agent[None, OptimizationPlan]:
     """Create an optimizer agent using Gemini Pro with MEDIUM thinking."""
     agent = Agent(
         GEMINI_PRO,
@@ -203,13 +206,23 @@ async def _optimize_file(
     """
     from agent.nodes.reviewer import review_optimization
 
-    file_results = [r for r in benchmark_results if r.get("file") == file_path]
+    file_results = [
+        {k: v for k, v in r.items() if k not in ("raw_output", "script_content")}
+        for r in benchmark_results
+        if r.get("file") == file_path
+    ]
+    # Truncate serialized results to prevent prompt explosion
+    file_results_json = json.dumps(file_results, indent=2)[:5000]
 
     agent = _create_optimizer_agent()
 
     hotspot_info = [
-        {"function_name": h.function_name, "severity": h.severity,
-         "category": h.category, "reasoning": h.reasoning}
+        {
+            "function_name": h.function_name,
+            "severity": h.severity,
+            "category": h.category,
+            "reasoning": h.reasoning,
+        }
         for h in hotspots
     ]
 
@@ -241,7 +254,9 @@ Rules:
     regression_section = ""
     if previous_results:
         regression_section = _build_regression_section(
-            file_path, benchmark_results, previous_results,
+            file_path,
+            benchmark_results,
+            previous_results,
         )
 
     prompt = f"""## Bottlenecks in {file_path}
@@ -251,7 +266,7 @@ Rules:
 
 ## Benchmark Results (Baseline)
 ```json
-{json.dumps(file_results, indent=2)}
+{file_results_json}
 ```
 {correctness_section}{regression_section}
 ## Source File: {file_path}
@@ -264,9 +279,20 @@ Rules:
 
 Optimize the bottleneck functions in this file."""
 
+    MAX_PROMPT_CHARS = 50_000
+    if len(prompt) > MAX_PROMPT_CHARS:
+        log.warning(
+            "optimize_prompt_truncated",
+            file=file_path,
+            original_chars=len(prompt),
+            max_chars=MAX_PROMPT_CHARS,
+        )
+        prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[... prompt truncated for size ...]"
+
     try:
         result = await run_agent_logged(
-            agent, prompt,
+            agent,  # type: ignore[arg-type]
+            prompt,
             node_name=f"optimize_{file_path.split('/')[-1]}",
             model_settings=PRO_SETTINGS,
         )
@@ -305,7 +331,9 @@ Optimize the bottleneck functions in this file."""
 
         optimized = file_content
         for change in accepted_changes:
-            optimized = optimized.replace(change.original_snippet, change.optimized_snippet)
+            optimized = optimized.replace(
+                change.original_snippet, change.optimized_snippet
+            )
 
         for change in accepted_changes:
             log.info(
@@ -341,7 +369,9 @@ async def optimize_node(state: AgentState) -> dict:
     repo_path = state.get("repo_path", "")
     correctness_failures = state.get("correctness_failures", [])
     optimization_bias = state.get("optimization_bias", "balanced")
-    bias_instruction = BIAS_INSTRUCTIONS.get(optimization_bias, BIAS_INSTRUCTIONS["balanced"])
+    bias_instruction = BIAS_INSTRUCTIONS.get(
+        optimization_bias, BIAS_INSTRUCTIONS["balanced"]
+    )
 
     file_hotspots: dict[str, list[Hotspot]] = {}
     for hotspot in analysis.hotspots:
@@ -376,7 +406,10 @@ async def optimize_node(state: AgentState) -> dict:
 
     tasks = [
         _optimize_file(
-            file_path, content, file_hotspots[file_path], initial_results,
+            file_path,
+            content,
+            file_hotspots[file_path],
+            initial_results,
             correctness_failures=correctness_failures,
             previous_results=final_results if is_retry else None,
             bias_instruction=bias_instruction,
@@ -401,7 +434,8 @@ async def optimize_node(state: AgentState) -> dict:
     return {
         **state,
         "optimized_files": optimized_files,
-        "messages": state.get("messages", []) + [
+        "messages": state.get("messages", [])
+        + [
             f"Generated {total_changes} optimizations across {len(optimized_files)} files"
         ],
     }
