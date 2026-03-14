@@ -9,6 +9,8 @@ from agent.schemas import AnalysisResult, Hotspot, OptimizationChange, Optimizat
 from agent.state import AgentState
 from services.gemini_service import (
     GEMINI_FLASH,
+    GEMINI_PRO,
+    PRO_SETTINGS,
     run_agent_logged,
 )
 from services.github_service import read_file
@@ -80,7 +82,21 @@ Optimization strategies to consider:
 - Connection pooling for database queries
 - Lazy evaluation where appropriate
 
-Be precise: only modify code that actually impacts performance. Preserve correctness."""
+Be precise: only modify code that actually impacts performance. Preserve correctness.
+CRITICAL CONSTRAINTS
+DO NOT:
+- Trivialize or stub out functions
+- Remove error handling or validation
+- Change function signatures or public APIs
+- Make code significantly harder to understand
+- Sacrifice correctness for speed
+
+STRATEGY
+1. Prioritize hotspots by severity (focus on the most impactful first)
+2. For each optimization, be realistic about improvement potential
+3. Document any tradeoffs (speed vs memory vs maintainability)
+4. Stop if an optimization risks correctness or adds significant complexity
+5. Preserve all edge cases, error handling, and business logic"""
 
 BIAS_INSTRUCTIONS: dict[str, str] = {
     "speed": (
@@ -166,16 +182,16 @@ not just different from your last attempt.
 
 
 def _create_optimizer_agent() -> Agent:
-    """Create an optimizer agent."""
+    """Create an optimizer agent using Gemini Pro with MEDIUM thinking."""
     agent = Agent(
-        GEMINI_FLASH,
+        GEMINI_PRO,
         output_type=OptimizationPlan,
         system_prompt=OPTIMIZER_PROMPT,
     )
 
     agent._codemark_system_prompt = OPTIMIZER_PROMPT  # type: ignore[attr-defined]
     agent._codemark_output_type = "OptimizationPlan"  # type: ignore[attr-defined]
-    agent._model_str = GEMINI_FLASH  # type: ignore[attr-defined]
+    agent._model_str = GEMINI_PRO  # type: ignore[attr-defined]
 
     return agent
 
@@ -262,6 +278,7 @@ Optimize the bottleneck functions in this file."""
         result = await run_agent_logged(
             agent, prompt,
             node_name=f"optimize_{file_path.split('/')[-1]}",
+            model_settings=PRO_SETTINGS,
         )
         plan: OptimizationPlan = result.output  # type: ignore[assignment]
 
