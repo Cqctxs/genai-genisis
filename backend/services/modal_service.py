@@ -1,11 +1,6 @@
 import asyncio
-import os
-import tempfile
 
 import modal
-import structlog
-
-log = structlog.get_logger()
 
 SANDBOX_TIMEOUT = 60
 
@@ -86,8 +81,10 @@ async def run_benchmark(
     repo_files: dict[str, str] | None = None,
 ) -> dict:
     """Execute benchmark code in a Modal sandbox and return results."""
-    log.info("starting_modal_sandbox", language=language)
+    import structlog
+    log = structlog.get_logger()
 
+    log.info("starting_modal_sandbox", language=language)
     files = repo_files or {}
 
     try:

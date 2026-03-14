@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -110,17 +111,21 @@ async def stream_job(job_id: str):
 
     async def event_generator():
         queue = job_queues[job_id]
-        while True:
-            try:
-                message = await asyncio.wait_for(queue.get(), timeout=30.0)
-                yield {
-                    "event": message.get("event", "update"),
-                    "data": str(message.get("data", "")),
-                }
-                if message.get("event") in ("complete", "error"):
-                    break
-            except asyncio.TimeoutError:
-                yield {"event": "heartbeat", "data": ""}
+        try:
+            while True:
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    data = message.get("data", "")
+                    yield {
+                        "event": message.get("event", "update"),
+                        "data": json.dumps(data) if isinstance(data, (dict, list)) else str(data),
+                    }
+                    if message.get("event") in ("complete", "error"):
+                        break
+                except asyncio.TimeoutError:
+                    yield {"event": "heartbeat", "data": ""}
+        finally:
+            job_queues.pop(job_id, None)
 
     return EventSourceResponse(event_generator())
 

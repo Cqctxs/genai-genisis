@@ -1,5 +1,3 @@
-import os
-
 import structlog
 from pydantic_ai import Agent
 
