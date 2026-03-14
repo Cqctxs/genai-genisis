@@ -51,7 +51,7 @@ async def _regenerate_benchmark(
 ) -> BenchmarkScript | None:
     """Ask Gemini to fix a benchmark script that failed at runtime."""
     from agent.nodes.benchmarker import BENCHMARK_PROMPT
-    from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
+    from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
     filtered_ast = {
         "functions": [f for f in ast_map.get("functions", []) if f.get("file") == bench.file],
@@ -93,7 +93,7 @@ IMPORTANT:
 - Do NOT reuse the broken mock data from the previous attempt."""
 
     try:
-        agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_PRO)
+        agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_FLASH)
         result = await run_agent_logged(agent, fix_prompt, node_name=f"fix_bench_{bench.target_function}")
         fixed: BenchmarkScript = result.output  # type: ignore[assignment]
         log.info(
@@ -197,6 +197,7 @@ async def _execute_single_benchmark(
     index: int,
     repo_files: dict[str, str],
     ast_map: dict | None = None,
+    allow_regeneration: bool = True,
 ) -> dict:
     """Execute a single benchmark, retrying with Gemini regeneration on failure."""
     current_bench = bench
@@ -244,9 +245,11 @@ async def _execute_single_benchmark(
             return result
 
         remaining = MAX_BENCH_RETRIES - attempt
-        if remaining <= 0 or ast_map is None:
+        if remaining <= 0 or ast_map is None or not allow_regeneration:
             if remaining <= 0:
                 log.warning("benchmark_max_retries_exhausted", target=bench.target_function)
+            elif not allow_regeneration:
+                log.warning("benchmark_regeneration_disabled", target=bench.target_function)
             return result
 
         log.info(
@@ -344,7 +347,10 @@ async def run_benchmarks_node(state: AgentState) -> dict:
     ast_map = state.get("ast_map", {})
 
     tasks = [
-        _execute_single_benchmark(bench, i, repo_files, ast_map=ast_map)
+        _execute_single_benchmark(
+            bench, i, repo_files, ast_map=ast_map,
+            allow_regeneration=(results_key == "initial_results")
+        )
         for i, bench in enumerate(benchmarks)
     ]
     results = list(await asyncio.gather(*tasks))

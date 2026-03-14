@@ -65,18 +65,20 @@ COMPLEXITY_BASE_START = 3000
 def _match_results(
     initial: list[dict], final: list[dict]
 ) -> list[tuple[dict, dict]]:
-    """Pair initial/final results by function_name."""
-    final_by_fn: dict[str, dict] = {}
+    """Pair initial/final results by (function_name, file)."""
+    final_by_fn: dict[tuple[str, str], dict] = {}
     for r in final:
         fn = r.get("function_name", "")
-        if fn:
-            final_by_fn[fn] = r
+        file_path = r.get("file", "")
+        if fn and file_path:
+            final_by_fn[(fn, file_path)] = r
 
     pairs: list[tuple[dict, dict]] = []
     for r in initial:
         fn = r.get("function_name", "")
-        if fn in final_by_fn:
-            pairs.append((r, final_by_fn[fn]))
+        file_path = r.get("file", "")
+        if (fn, file_path) in final_by_fn:
+            pairs.append((r, final_by_fn[(fn, file_path)]))
     return pairs
 
 
