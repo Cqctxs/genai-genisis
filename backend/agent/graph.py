@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+import traceback
 
 import structlog
 from langgraph.graph import END, StateGraph
