@@ -32,6 +32,13 @@ def get_agent(output_type: type, system_prompt: str, model: str = GEMINI_PRO) ->
     )
     agent._codemark_system_prompt = system_prompt  # type: ignore[attr-defined]
     agent._codemark_output_type = _output_type_label(output_type)  # type: ignore[attr-defined]
+    agent._model_str = model  # type: ignore[attr-defined]
+    log.debug(
+        "agent_created",
+        model=model,
+        is_pro=model == GEMINI_PRO,
+        output_type=_output_type_label(output_type),
+    )
     return agent
 
 
@@ -48,14 +55,6 @@ def _format_output(output: object) -> str:
                 items.append(item)
         return json.dumps(items, indent=2, default=str)
     return str(output)
-    agent._model_str = model  # type: ignore[attr-defined]
-    log.debug(
-        "agent_created",
-        model=model,
-        is_pro=model == GEMINI_PRO,
-        output_type=output_type.__name__,
-    )
-    return agent
 
 
 async def run_agent_logged(
@@ -69,7 +68,7 @@ async def run_agent_logged(
     model_name = str(getattr(agent, "model", "unknown"))
     system_prompt = getattr(agent, "_codemark_system_prompt", "<unavailable>")
     model_str = getattr(agent, '_model_str', '')
-    output_type = model_str or getattr(agent, "_codemark_output_type", "unknown")
+    output_type = getattr(agent, "_codemark_output_type", "unknown")
 
     # Default to PRO_SETTINGS for Pro model calls
     settings = model_settings
@@ -79,20 +78,25 @@ async def run_agent_logged(
     thinking_config = getattr(settings, "google_thinking_config", None) if settings else None
     thinking_level = thinking_config.get("thinking_level") if thinking_config else None
 
-    log.info(
-        "gemini_request",
-        node=node_name,
-        model=model_name,
-        output_type=output_type_name,
-        prompt_chars=len(prompt),
-        prompt_preview=prompt[:300].replace("\n", " "),
-        is_pro=model_str == GEMINI_PRO,
-        settings_applied=settings is not None,
-        settings_repr=repr(settings),
-        thinking_config=repr(thinking_config),
-        thinking_level=repr(thinking_level),
+    log_block(
+        f"GEMINI REQUEST [{node_name}]",
+        metadata={
+            "model": model_name,
+            "model_str": model_str,
+            "output_type": output_type,
+            "prompt_chars": len(prompt),
+            "is_pro": model_str == GEMINI_PRO,
+            "settings_applied": settings is not None,
+            "thinking_level": repr(thinking_level),
+        },
+        sections={
+            "SYSTEM PROMPT": system_prompt[:500],
+            "USER PROMPT": prompt[:500],
+        },
+        color="blue",
     )
 
+    start = time.monotonic()
     try:
         result = await agent.run(prompt, model_settings=settings)
     except Exception as e:
