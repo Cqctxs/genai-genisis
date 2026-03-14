@@ -70,7 +70,7 @@ function MetricCard({
 }
 
 export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
-  const { codemark_score, functions, summary, sandbox_specs } = comparison;
+  const { benchy_score, functions, summary, sandbox_specs } = comparison;
 
   const totalOldTime = functions.reduce((acc, f) => acc + f.old_time_ms, 0);
   const totalNewTime = functions.reduce((acc, f) => acc + f.new_time_ms, 0);
@@ -83,16 +83,16 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
 
   return (
     <div className="space-y-6">
-      {/* CodeMark Score */}
+      {/* Benchy Score */}
       <Card className="bg-neutral-900 border-neutral-800">
         <CardContent className="py-8">
           <div className="text-center space-y-4">
             <p className="text-xs uppercase tracking-widest text-neutral-500">
-              CodeMark Score
+              Benchy Score
             </p>
             <div className="flex items-center justify-center gap-6">
               <div className="text-2xl text-neutral-500">
-                <AnimatedScore target={codemark_score.overall_before} duration={1} />
+                <AnimatedScore target={benchy_score.overall_before} duration={1} />
               </div>
               <svg
                 className="w-6 h-6 text-neutral-600"
@@ -109,7 +109,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 transition={{ delay: 0.5, duration: 0.5 }}
                 className="text-5xl font-bold text-blue-400"
               >
-                <AnimatedScore target={codemark_score.overall_after} />
+                <AnimatedScore target={benchy_score.overall_after} />
               </motion.div>
             </div>
           </div>
@@ -128,7 +128,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart
-                  data={codemark_score.radar_data}
+                  data={benchy_score.radar_data}
                   margin={{ top: 10, right: 30, bottom: 10, left: 30 }}
                 >
                   <PolarGrid stroke="#404040" />

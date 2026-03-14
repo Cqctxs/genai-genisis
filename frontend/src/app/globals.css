@@ -144,13 +144,13 @@
   *::-webkit-scrollbar-thumb:hover {
     background: oklch(0.4 0 0 / 60%);
   }
-  html, body {
-    @apply overflow-hidden;
-  }
   body {
     @apply bg-background text-foreground;
   }
   html {
     @apply font-sans;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
   }
 }

@@ -23,7 +23,7 @@ const junicode = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "CodeMark - AI Performance Optimizer",
+  title: "Benchy - AI Performance Optimizer",
   description: "Analyze, benchmark, and optimize your code with AI",
 };
 
@@ -33,10 +33,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body
-        className={`${inter.variable} ${geistMono.variable} ${junicode.variable} antialiased bg-dark text-light`}
-      >
+    <html lang="en" className={`dark ${inter.variable} ${geistMono.variable} ${junicode.variable}`}>
+      <body className="antialiased bg-dark text-light">
+
         <Providers>
           {children}
           <Toaster />

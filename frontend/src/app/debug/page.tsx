@@ -31,7 +31,7 @@ const FAKE_MESSAGES = [
   { node: "optimize", message: "Optimizing aggregate_metrics: replaced O(n²) with hash-based merge", timestamp: Date.now() - 6000 },
   { node: "rerun_benchmarks", message: "Re-benchmarking optimized code...", timestamp: Date.now() - 4000 },
   { node: "rerun_benchmarks", message: "process_batch improved: 142.3ms → 31.2ms (4.6x)", timestamp: Date.now() - 3000 },
-  { node: "report", message: "Computing CodeMark score delta...", timestamp: Date.now() - 2000 },
+  { node: "report", message: "Computing Benchy score delta...", timestamp: Date.now() - 2000 },
   { node: "cleanup", message: "Destroying sandbox. Analysis complete.", timestamp: Date.now() - 1000 },
 ];
 
@@ -66,7 +66,7 @@ const FAKE_COMPARISON: ComparisonReport = {
     { function_name: "write_output", file: "io.py", old_time_ms: 45.2, new_time_ms: 18.9, speedup_factor: 2.4, old_memory_mb: 8.1, new_memory_mb: 5.2, memory_reduction_pct: 35.8 },
     { function_name: "validate_schema", file: "validation.py", old_time_ms: 18.4, new_time_ms: 7.1, speedup_factor: 2.6, old_memory_mb: 3.2, new_memory_mb: 2.0, memory_reduction_pct: 37.5 },
   ],
-  codemark_score: {
+  benchy_score: {
     overall_before: 3420,
     overall_after: 8940,
     time_score: 91,
@@ -81,7 +81,7 @@ const FAKE_COMPARISON: ComparisonReport = {
     ],
   },
   summary:
-    "Analysis of acme/data-pipeline identified 5 performance bottlenecks across the data processing pipeline. Key optimizations include vectorizing the inner loop in process_batch() using NumPy, replacing the O(n²) nested merge in aggregate_metrics() with a hash-based approach, and introducing chunked I/O writes. Overall CodeMark score improved from 3,420 to 8,940 — a 2.6x improvement across execution time, memory, and complexity dimensions.",
+    "Analysis of acme/data-pipeline identified 5 performance bottlenecks across the data processing pipeline. Key optimizations include vectorizing the inner loop in process_batch() using NumPy, replacing the O(n²) nested merge in aggregate_metrics() with a hash-based approach, and introducing chunked I/O writes. Overall Benchy score improved from 3,420 to 8,940 — a 2.6x improvement across execution time, memory, and complexity dimensions.",
   sandbox_specs: "E2B Cloud Sandbox · 2 vCPU · 4 GB RAM · Python 3.12 · Ubuntu 22.04",
 };
 
@@ -145,8 +145,8 @@ export default function DebugPage() {
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-neutral-800 px-6 py-3 flex items-center justify-between sticky top-0 bg-neutral-950/90 backdrop-blur-sm z-50">
         <h1 className="text-lg font-semibold tracking-tight">
-          Code<span className="text-blue-500">Mark</span>
-          <span className="text-xs ml-2 text-neutral-500 font-normal">Debug Mode</span>
+          Benchy
+          <span className="text-xs ml-2 text-neutral-500 font-normal font-sans">Debug Mode</span>
         </h1>
         <a href="/" className="text-sm text-neutral-500 hover:text-white transition-colors">
           ← Back to app
@@ -171,7 +171,7 @@ export default function DebugPage() {
             <h3 className="text-2xl font-medium">Heading 3 — Pack my box with five dozen liquor jugs</h3>
             <h4 className="text-xl">Heading 4 — How vexingly quick daft zebras jump</h4>
             <p className="text-base text-neutral-300">
-              Body text — CodeMark analyzes your codebase using AST parsing, profiles bottlenecks in a sandboxed environment, and
+              Body text — Benchy analyzes your codebase using AST parsing, profiles bottlenecks in a sandboxed environment, and
               produces optimized code with a before/after performance score. Built with LangGraph, Gemini, and E2B.
             </p>
             <p className="text-sm text-neutral-500">
@@ -401,7 +401,7 @@ export default function DebugPage() {
       </main>
 
       <footer className="border-t border-neutral-800 py-4 text-center text-xs text-neutral-600">
-        CodeMark Debug Mode — All components rendered with synthetic data
+        Benchy Debug Mode — All components rendered with synthetic data
       </footer>
     </div>
   );

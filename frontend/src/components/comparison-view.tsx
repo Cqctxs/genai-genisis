@@ -17,7 +17,7 @@ export function PullRequestView({
   comparison,
 }: PullRequestViewProps) {
   const files = Object.keys(optimizedFiles);
-  const score = comparison?.codemark_score;
+  const score = comparison?.benchy_score;
 
   if (!prUrl && files.length === 0) {
     return (
@@ -60,7 +60,7 @@ export function PullRequestView({
           <div className="flex items-center justify-between rounded-lg bg-neutral-800/60 px-4 py-3">
             <div className="min-w-0 flex-1">
               <p className="truncate font-mono text-sm text-neutral-200">
-                perf: CodeMark automated optimizations
+                perf: Benchy automated optimizations
               </p>
               <p className="mt-0.5 text-xs text-neutral-500">
                 #{prNumber} &middot; {files.length} file
@@ -134,7 +134,7 @@ export function PullRequestView({
               {score && (
                 <p>
                   <span className="font-medium text-neutral-200">
-                    CodeMark Score:
+                    Benchy Score:
                   </span>{" "}
                   {score.overall_before.toFixed(0)} →{" "}
                   {score.overall_after.toFixed(0)}

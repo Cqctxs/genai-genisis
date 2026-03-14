@@ -133,7 +133,7 @@ export default function DashboardPage() {
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-neutral-800 px-6 py-3 flex items-center justify-between">
         <h1 className="text-lg font-semibold tracking-tight">
-          Code<span className="text-blue-500">Mark</span>
+          Benchy
         </h1>
         <div className="flex items-center gap-4">
           <span className="text-sm text-neutral-500">

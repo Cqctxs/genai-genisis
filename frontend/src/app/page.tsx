@@ -20,7 +20,7 @@ export default function LandingPage() {
       <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden">
         {/* Top nav — pinned */}
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
-          <span className="font-serif text-xl">CodeMark</span>
+          <span className="font-serif text-xl">Benchy</span>
           <div className="flex items-center gap-6">
             <a href="/debug" className="text-xs font-mono text-light/40 hover:text-light/70 transition-colors">
               /debug
@@ -41,29 +41,27 @@ export default function LandingPage() {
             {/* Logo + tagline */}
             <div className="space-y-6">
               <h1 className="font-serif text-6xl sm:text-8xl lg:text-9xl leading-[0.9] tracking-tight">
-                Code
-                <br />
-                Mark
+                Benchy
               </h1>
-              <p className="font-sans text-light/50 text-sm sm:text-base max-w-md leading-relaxed">
+              <p className="text-light/50 text-sm sm:text-base max-w-md leading-relaxed">
                 AI-powered performance analysis and optimization for your codebase.
               </p>
             </div>
 
-            <p className="font-sans text-base sm:text-lg leading-relaxed max-w-xl text-light/80">
-              CodeMark is an autonomous AI agent that clones your repository,
+            <p className="text-base sm:text-lg leading-relaxed max-w-xl text-light/80">
+              Benchy is an autonomous AI agent that clones your repository,
               parses the AST, identifies performance bottlenecks, and produces
               optimized code — all inside a sandboxed environment.
             </p>
 
-            <p className="font-sans text-base sm:text-lg leading-relaxed max-w-xl text-light/80">
+            <p className="text-base sm:text-lg leading-relaxed max-w-xl text-light/80">
               Connect a GitHub repository. The agent analyzes call graphs,
               generates benchmark harnesses, profiles execution in a cloud sandbox,
               then rewrites hot paths with measurable speedups. Every optimization
               is scored before and after.
             </p>
 
-            <p className="font-sans text-base sm:text-lg leading-relaxed max-w-xl text-light/80">
+            <p className="text-base sm:text-lg leading-relaxed max-w-xl text-light/80">
               Built with LangGraph for agent orchestration, Gemini for code
               intelligence, and Modal for sandboxed execution. The full pipeline
               runs in under two minutes for most repositories.
@@ -94,7 +92,7 @@ export default function LandingPage() {
             <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
           </div>
           <p className="font-mono text-[11px] text-light/30">
-            ● [✓] all systems nominal · welcome to codemark
+            ● [✓] all systems nominal · welcome to benchy
           </p>
           <span className="w-2 h-2 rounded-full bg-light/20" />
         </div>
