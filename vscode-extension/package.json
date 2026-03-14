@@ -1,0 +1,60 @@
+{
+  "name": "codemark",
+  "displayName": "CodeMark",
+  "description": "AI-powered code performance optimization — analyze, benchmark, and optimize your code directly in VS Code",
+  "version": "0.1.0",
+  "publisher": "codemark",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codemark.optimize",
+        "title": "CodeMark: Optimize Workspace"
+      },
+      {
+        "command": "codemark.optimizeFile",
+        "title": "CodeMark: Optimize Current File"
+      }
+    ],
+    "configuration": {
+      "title": "CodeMark",
+      "properties": {
+        "codemark.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "URL of the CodeMark backend server"
+        },
+        "codemark.optimizationBias": {
+          "type": "string",
+          "enum": [
+            "speed",
+            "balanced",
+            "memory"
+          ],
+          "default": "balanced",
+          "description": "Optimization priority: speed, balanced, or memory"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "eventsource": "^2.0.2"
+  }
+}
