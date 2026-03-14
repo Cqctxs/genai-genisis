@@ -74,7 +74,7 @@ async def cleanup_node(state: AgentState) -> dict:
     """Clean up cloned repo."""
     repo_path = state.get("repo_path", "")
     if repo_path:
-        cleanup_repo(repo_path)
+        await asyncio.to_thread(cleanup_repo, repo_path)
     return {}
 
 

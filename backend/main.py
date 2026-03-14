@@ -80,17 +80,18 @@ async def analyze_repo(request: Request, body: AnalyzeRequest):
     jobs[job_id] = {"status": "pending", "result": None}
 
     asyncio.create_task(
-        _run_agent(job_id, str(body.repo_url), body.github_token)
+        _run_agent(job_id, str(body.repo_url), body.github_token, queue)
     )
 
     log.info("job_created", job_id=job_id, repo_url=str(body.repo_url))
     return AnalyzeResponse(job_id=job_id)
 
 
-async def _run_agent(job_id: str, repo_url: str, github_token: str):
+async def _run_agent(
+    job_id: str, repo_url: str, github_token: str, queue: asyncio.Queue
+):
     from agent.graph import run_optimization_pipeline
 
-    queue = job_queues[job_id]
     try:
         jobs[job_id]["status"] = "running"
         result = await run_optimization_pipeline(repo_url, github_token, queue)
