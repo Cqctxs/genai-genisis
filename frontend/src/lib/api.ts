@@ -99,6 +99,7 @@ export interface JobResult {
   initial_results: any[];
   final_results: any[];
   analysis: any;
+  pr_url: string;
 }
 
 export async function startAnalysis(

@@ -7,7 +7,7 @@ import { RepoInput } from "@/components/repo-input";
 import { LiveTelemetry } from "@/components/live-telemetry";
 import { PerformanceGraph } from "@/components/performance-graph";
 import { ScoreDashboard } from "@/components/score-dashboard";
-import { ComparisonView } from "@/components/comparison-view";
+import { PullRequestView } from "@/components/comparison-view";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,7 @@ export default function DashboardPage() {
     optimize: "optimizing",
     rerun_benchmarks: "re-benchmarking",
     report: "scoring",
+    create_pr: "scoring",
     cleanup: "scoring",
   };
 
@@ -163,8 +164,8 @@ export default function DashboardPage() {
               <TabsTrigger value="results" disabled={!results}>
                 Results
               </TabsTrigger>
-              <TabsTrigger value="diff" disabled={!results}>
-                Code Diff
+              <TabsTrigger value="pr" disabled={!results}>
+                Pull Request
               </TabsTrigger>
             </TabsList>
 
@@ -188,12 +189,13 @@ export default function DashboardPage() {
               </ErrorBoundary>
             </TabsContent>
 
-            <TabsContent value="diff" className="mt-4">
+            <TabsContent value="pr" className="mt-4">
               <ErrorBoundary>
-                {results?.optimized_files && results?.analysis && (
-                  <ComparisonView
-                    optimizedFiles={results.optimized_files}
-                    analysis={results.analysis}
+                {results && (
+                  <PullRequestView
+                    prUrl={results.pr_url ?? ""}
+                    optimizedFiles={results.optimized_files ?? {}}
+                    comparison={results.comparison ?? null}
                   />
                 )}
               </ErrorBoundary>

@@ -13,6 +13,7 @@ from agent.nodes.reporter import report_node
 from agent.nodes.runner import run_benchmarks_node
 from agent.nodes.visualizer import visualize_node
 from agent.state import AgentState
+from services.github_pr_service import create_optimization_pr
 from services.github_service import cleanup_repo, clone_repo
 
 log = structlog.get_logger()
@@ -105,6 +106,39 @@ async def cleanup_node(state: AgentState) -> dict:
     return {}
 
 
+async def create_pr_node(state: AgentState) -> dict:
+    """Create a GitHub PR with the optimized code. Non-fatal on failure."""
+    repo_url = state.get("repo_url", "")
+    github_token = state.get("github_token", "")
+    optimized_files = state.get("optimized_files", {})
+    comparison = state.get("comparison", {})
+
+    if not optimized_files:
+        log.warning("create_pr_skipped", reason="no optimized files")
+        return {**state, "pr_url": ""}
+
+    try:
+        pr_url = await create_optimization_pr(
+            repo_url=repo_url,
+            github_token=github_token,
+            optimized_files=optimized_files,
+            comparison=comparison,
+        )
+        log.info("create_pr_complete", pr_url=pr_url)
+        return {
+            **state,
+            "pr_url": pr_url,
+            "messages": state.get("messages", []) + [f"Pull request created: {pr_url}"],
+        }
+    except Exception as e:
+        log.error("create_pr_failed", error=str(e), traceback=traceback.format_exc())
+        return {
+            **state,
+            "pr_url": "",
+            "messages": state.get("messages", []) + [f"PR creation failed: {e}"],
+        }
+
+
 def build_graph() -> StateGraph:
     """Build the LangGraph optimization pipeline."""
     graph = StateGraph(AgentState)
@@ -118,6 +152,7 @@ def build_graph() -> StateGraph:
     graph.add_node("optimize", optimize_node)
     graph.add_node("rerun_benchmarks", rerun_benchmarks_node)
     graph.add_node("report", report_node)
+    graph.add_node("create_pr", create_pr_node)
     graph.add_node("cleanup", cleanup_node)
 
     graph.set_entry_point("clone")
@@ -132,7 +167,8 @@ def build_graph() -> StateGraph:
         "optimize": "optimize",
         "report": "report",
     })
-    graph.add_edge("report", "cleanup")
+    graph.add_edge("report", "create_pr")
+    graph.add_edge("create_pr", "cleanup")
     graph.add_edge("cleanup", END)
 
     return graph
@@ -193,6 +229,7 @@ async def run_optimization_pipeline(
         "initial_results": final_state.get("initial_results", []),
         "final_results": final_state.get("final_results", []),
         "analysis": final_state.get("analysis", {}),
+        "pr_url": final_state.get("pr_url", ""),
     }
 
     return result

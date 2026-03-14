@@ -4,7 +4,7 @@ import { useState } from "react";
 import { LiveTelemetry } from "@/components/live-telemetry";
 import { PerformanceGraph } from "@/components/performance-graph";
 import { ScoreDashboard } from "@/components/score-dashboard";
-import { ComparisonView } from "@/components/comparison-view";
+import { PullRequestView } from "@/components/comparison-view";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -132,65 +132,6 @@ def transform_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         for record in records
     ]
 `,
-};
-
-const FAKE_ANALYSIS = {
-  original_files: {
-    "pipeline.py": `from typing import List, Dict, Any
-
-def process_batch(records: List[Dict[str, Any]], batch_size: int = 1000) -> List[Dict[str, Any]]:
-    \"\"\"Process records in batches.\"\"\"
-    results = []
-    for i in range(0, len(records), batch_size):
-        batch = records[i : i + batch_size]
-        for record in batch:
-            value = record["value"]
-            # Normalize against all records in batch
-            total = sum(r["value"] for r in batch)
-            mean = total / len(batch)
-            variance = sum((r["value"] - mean) ** 2 for r in batch) / len(batch)
-            std = variance ** 0.5
-            if std == 0:
-                std = 1e-8
-            normalized = (value - mean) / std
-            scaled = normalized * 100
-            results.append({**record, "processed_value": scaled})
-    return results
-`,
-    "metrics.py": `from typing import List, Dict, Any
-
-def aggregate_metrics(records: List[Dict[str, Any]]) -> Dict[str, float]:
-    \"\"\"Aggregate metrics by category.\"\"\"
-    categories = list(set(r["category"] for r in records))
-    result = {}
-    for cat in categories:
-        matching = [r for r in records if r["category"] == cat]
-        total = 0
-        for r in matching:
-            total += r["processed_value"]
-        result[cat] = total / len(matching) if matching else 0
-    return result
-`,
-    "transform.py": `from typing import List, Dict, Any
-
-def transform_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    \"\"\"Transform records to canonical field names.\"\"\"
-    result = []
-    for record in records:
-        new_record = {}
-        for key, value in record.items():
-            if key == "ts":
-                new_record["timestamp"] = value
-            elif key == "val":
-                new_record["value"] = value
-            elif key == "cat":
-                new_record["category"] = value
-            else:
-                new_record[key] = value
-        result.append(new_record)
-    return result
-`,
-  },
 };
 
 type Phase = "idle" | "analyzing" | "benchmarking" | "optimizing" | "re-benchmarking" | "scoring" | "complete" | "error";
@@ -430,12 +371,13 @@ export default function DebugPage() {
           </ErrorBoundary>
         </Section>
 
-        {/* ── Comparison View ── */}
-        <Section title="Code Diff / Comparison View">
+        {/* ── Pull Request View ── */}
+        <Section title="Pull Request View">
           <ErrorBoundary>
-            <ComparisonView
+            <PullRequestView
+              prUrl="https://github.com/acme/data-pipeline/pull/42"
               optimizedFiles={FAKE_OPTIMIZED_FILES}
-              analysis={FAKE_ANALYSIS}
+              comparison={FAKE_COMPARISON}
             />
           </ErrorBoundary>
         </Section>

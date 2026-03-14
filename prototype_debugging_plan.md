@@ -16,7 +16,7 @@ todos:
     status: pending
   - id: auto-pr
     content: "Replace code diff tab with auto PR creation: new github_pr_service.py, create_pr_node in graph, PR link UI in frontend"
-    status: pending
+    status: completed
   - id: speed
     content: "Speed up pipeline: parallelize visualize+optimize nodes, switch visualizer to Flash, parallelize benchmark runs with asyncio.gather"
     status: pending
