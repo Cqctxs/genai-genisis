@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import time
@@ -88,35 +89,262 @@ def _build_pr_body(comparison: dict) -> str:
     return "\n".join(lines)
 
 
-async def _resolve_token(owner: str, repo: str, user_token: str) -> str:
-    """Pick the best token for PR creation.
+async def _get_bot_username(client: httpx.AsyncClient, headers: dict[str, str]) -> str:
+    """Get the authenticated username for the bot token."""
+    resp = await client.get(f"{GITHUB_API}/user", headers=headers)
+    resp.raise_for_status()
+    return resp.json()["login"]
 
-    Prefers CODEMARK_BOT_TOKEN so PRs are authored by the bot account.
-    Falls back to the user's token if the bot token is missing or lacks
-    push access to the target repo.
+
+async def _invite_bot_as_collaborator(
+    client: httpx.AsyncClient,
+    owner: str,
+    repo: str,
+    bot_username: str,
+    user_token: str,
+) -> bool:
+    """Use the user's token to invite the bot, then the bot token to accept.
+
+    Returns True if the bot now has push access, False on any failure.
+    """
+    user_headers = _build_headers(user_token)
+    bot_headers = _build_headers(CODEMARK_BOT_TOKEN)
+
+    # Step 1: Invite bot as a collaborator with push (write) permission
+    invite_resp = await client.put(
+        f"{GITHUB_API}/repos/{owner}/{repo}/collaborators/{bot_username}",
+        headers=user_headers,
+        json={"permission": "push"},
+    )
+    if invite_resp.status_code == 204:
+        log.info("bot_already_collaborator", owner=owner, repo=repo, bot=bot_username)
+        return True
+    if invite_resp.status_code not in (200, 201):
+        log.warning(
+            "bot_invite_failed",
+            owner=owner,
+            repo=repo,
+            bot=bot_username,
+            status=invite_resp.status_code,
+            body=invite_resp.text[:300],
+        )
+        return False
+
+    log.info("bot_invite_sent", owner=owner, repo=repo, bot=bot_username)
+
+    # Step 2: Find and accept the pending invitation using the bot's token
+    invitations_resp = await client.get(
+        f"{GITHUB_API}/user/repository_invitations",
+        headers=bot_headers,
+    )
+    if invitations_resp.status_code != 200:
+        log.warning("bot_list_invitations_failed", status=invitations_resp.status_code)
+        return False
+
+    invitation_id = None
+    for inv in invitations_resp.json():
+        inv_repo = inv.get("repository", {}).get("full_name", "")
+        if inv_repo == f"{owner}/{repo}":
+            invitation_id = inv["id"]
+            break
+
+    if invitation_id is None:
+        log.warning("bot_invitation_not_found", owner=owner, repo=repo)
+        return False
+
+    accept_resp = await client.patch(
+        f"{GITHUB_API}/user/repository_invitations/{invitation_id}",
+        headers=bot_headers,
+    )
+    if accept_resp.status_code not in (200, 204):
+        log.warning(
+            "bot_accept_invitation_failed",
+            invitation_id=invitation_id,
+            status=accept_resp.status_code,
+        )
+        return False
+
+    log.info("bot_invitation_accepted", owner=owner, repo=repo, bot=bot_username)
+    return True
+
+
+async def _ensure_fork(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    owner: str,
+    repo: str,
+    bot_username: str,
+) -> str:
+    """Ensure a fork of owner/repo exists under the bot account.
+
+    Returns the fork's full_name (e.g. "benchy-bot/portfolio-2").
+    GitHub's fork API is idempotent — calling it on an existing fork returns it.
+    """
+    resp = await client.post(
+        f"{GITHUB_API}/repos/{owner}/{repo}/forks",
+        headers=headers,
+        json={"default_branch_only": True},
+    )
+    if resp.status_code not in (200, 202):
+        resp.raise_for_status()
+
+    fork_data = resp.json()
+    fork_full_name = fork_data["full_name"]
+    fork_owner = fork_data["owner"]["login"]
+    log.info("bot_fork_ensured", fork=fork_full_name, fork_owner=fork_owner)
+
+    for attempt in range(12):
+        check = await client.get(
+            f"{GITHUB_API}/repos/{fork_owner}/{repo}",
+            headers=headers,
+        )
+        if check.status_code == 200:
+            return fork_full_name
+        await asyncio.sleep(5)
+
+    return fork_full_name
+
+
+async def _resolve_token_and_strategy(
+    owner: str, repo: str, user_token: str
+) -> tuple[str, bool, bool]:
+    """Determine which token to use and whether to fork.
+
+    Returns (token, is_bot, use_fork).
+
+    Priority order:
+    1. Bot already has push access → bot token, direct push.
+    2. Bot exists but no push → invite bot as collaborator via user's token.
+       If invitation succeeds → bot token, direct push.
+    3. Public repo, invitation failed → bot token via fork.
+    4. Private repo, invitation failed → user token (can't fork private repos).
+    5. Bot token has no access at all → user token.
     """
     if not CODEMARK_BOT_TOKEN:
-        return user_token
+        return user_token, False, False
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        bot_headers = _build_headers(CODEMARK_BOT_TOKEN)
+
+        # Check current bot access level
         resp = await client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}",
-            headers=_build_headers(CODEMARK_BOT_TOKEN),
+            headers=bot_headers,
         )
-        if resp.status_code == 200:
-            permissions = resp.json().get("permissions", {})
-            if permissions.get("push"):
-                return CODEMARK_BOT_TOKEN
-            log.warning("bot_token_no_push_access", owner=owner, repo=repo)
-        else:
-            log.warning(
-                "bot_token_no_repo_access",
+
+        if resp.status_code != 200:
+            # Bot can't even see the repo — try to invite it anyway (works for
+            # private repos the user owns where the bot has zero prior access).
+            bot_username = await _get_bot_username(client, bot_headers)
+            invited = await _invite_bot_as_collaborator(
+                client, owner, repo, bot_username, user_token,
+            )
+            if invited:
+                log.info("bot_granted_access_via_invite", owner=owner, repo=repo)
+                return CODEMARK_BOT_TOKEN, True, False
+
+            log.warning("bot_token_no_repo_access", owner=owner, repo=repo, status=resp.status_code)
+            return user_token, False, False
+
+        repo_data = resp.json()
+        permissions = repo_data.get("permissions", {})
+        is_private = repo_data.get("private", False)
+
+        if permissions.get("push"):
+            return CODEMARK_BOT_TOKEN, True, False
+
+        # Bot can see the repo but can't push — try to upgrade via invitation
+        bot_username = await _get_bot_username(client, bot_headers)
+        invited = await _invite_bot_as_collaborator(
+            client, owner, repo, bot_username, user_token,
+        )
+        if invited:
+            log.info("bot_upgraded_to_push_via_invite", owner=owner, repo=repo)
+            return CODEMARK_BOT_TOKEN, True, False
+
+        # Invitation failed — fork for public repos, user token for private
+        if is_private:
+            log.info(
+                "bot_no_push_private_repo_fallback",
                 owner=owner,
                 repo=repo,
-                status=resp.status_code,
+                reason="invitation failed and cannot fork private repos",
             )
+            return user_token, False, False
 
-    return user_token
+        log.info("bot_no_push_will_fork", owner=owner, repo=repo)
+        return CODEMARK_BOT_TOKEN, True, True
+
+
+async def _push_changes_to_repo(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    target_repo: str,
+    branch_name: str,
+    base_sha: str,
+    optimized_files: dict[str, str],
+) -> None:
+    """Create branch, blobs, tree, commit, and update ref on the target repo."""
+    create_ref_resp = await client.post(
+        f"{GITHUB_API}/repos/{target_repo}/git/refs",
+        headers=headers,
+        json={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
+    )
+    create_ref_resp.raise_for_status()
+    log.info("pr_branch_created", repo=target_repo, branch=branch_name)
+
+    blob_shas: dict[str, str] = {}
+    for file_path, content in optimized_files.items():
+        blob_resp = await client.post(
+            f"{GITHUB_API}/repos/{target_repo}/git/blobs",
+            headers=headers,
+            json={"content": content, "encoding": "utf-8"},
+        )
+        blob_resp.raise_for_status()
+        blob_shas[file_path] = blob_resp.json()["sha"]
+
+    commit_resp = await client.get(
+        f"{GITHUB_API}/repos/{target_repo}/git/commits/{base_sha}",
+        headers=headers,
+    )
+    commit_resp.raise_for_status()
+    base_tree_sha = commit_resp.json()["tree"]["sha"]
+
+    tree_items = [
+        {"path": path, "mode": "100644", "type": "blob", "sha": sha}
+        for path, sha in blob_shas.items()
+    ]
+    tree_resp = await client.post(
+        f"{GITHUB_API}/repos/{target_repo}/git/trees",
+        headers=headers,
+        json={"base_tree": base_tree_sha, "tree": tree_items},
+    )
+    tree_resp.raise_for_status()
+    new_tree_sha = tree_resp.json()["sha"]
+
+    commit_payload: dict = {
+        "message": "perf: CodeMark automated optimizations",
+        "tree": new_tree_sha,
+        "parents": [base_sha],
+        "author": {
+            "name": "CodeMark",
+            "email": "codemark-bot@users.noreply.github.com",
+        },
+    }
+    new_commit_resp = await client.post(
+        f"{GITHUB_API}/repos/{target_repo}/git/commits",
+        headers=headers,
+        json=commit_payload,
+    )
+    new_commit_resp.raise_for_status()
+    new_commit_sha = new_commit_resp.json()["sha"]
+
+    update_ref_resp = await client.patch(
+        f"{GITHUB_API}/repos/{target_repo}/git/refs/heads/{branch_name}",
+        headers=headers,
+        json={"sha": new_commit_sha},
+    )
+    update_ref_resp.raise_for_status()
 
 
 async def create_optimization_pr(
@@ -127,8 +355,11 @@ async def create_optimization_pr(
 ) -> str:
     """Create a GitHub PR with the optimized code changes.
 
-    Uses CODEMARK_BOT_TOKEN if configured (so PRs appear as the bot account),
-    otherwise falls back to the user's token.
+    Strategy:
+    1. If the bot token has direct push access → push branch and open PR directly.
+    2. If the bot token exists but lacks push → fork the repo under the bot account,
+       push to the fork, and open a cross-fork PR.
+    3. No bot token → use the user's token directly.
 
     Returns the PR HTML URL on success, or an empty string on failure.
     """
@@ -139,24 +370,38 @@ async def create_optimization_pr(
     owner, repo = _parse_owner_repo(repo_url)
     branch_name = f"{BRANCH_PREFIX}-{int(time.time())}"
 
-    token = await _resolve_token(owner, repo, github_token)
-    is_bot = token == CODEMARK_BOT_TOKEN and bool(CODEMARK_BOT_TOKEN)
-    log.info("create_pr_token_resolved", is_bot=is_bot)
+    token, is_bot, use_fork = await _resolve_token_and_strategy(owner, repo, github_token)
+    log.info("create_pr_token_resolved", is_bot=is_bot, use_fork=use_fork)
 
     headers = _build_headers(token)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        # 1. Get default branch and its latest commit SHA
+        scope_check = await client.get(f"{GITHUB_API}/user", headers=headers)
+        scopes = scope_check.headers.get("x-oauth-scopes", "(not present)")
+        log.info("token_scopes", scopes=scopes, is_bot=is_bot)
+
+        # Resolve base SHA from the upstream repo (always use user token for reading
+        # the upstream so we don't depend on fork sync state).
+        upstream_headers = _build_headers(github_token)
         repo_resp = await client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}",
-            headers=headers,
+            headers=upstream_headers,
         )
         repo_resp.raise_for_status()
-        default_branch = repo_resp.json()["default_branch"]
+        repo_data = repo_resp.json()
+        default_branch = repo_data["default_branch"]
+        permissions = repo_data.get("permissions", {})
+        log.info(
+            "pr_repo_permissions",
+            owner=owner,
+            repo=repo,
+            permissions=permissions,
+            is_bot=is_bot,
+        )
 
         ref_resp = await client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
-            headers=headers,
+            headers=upstream_headers,
         )
         ref_resp.raise_for_status()
         base_sha = ref_resp.json()["object"]["sha"]
@@ -169,86 +414,38 @@ async def create_optimization_pr(
             base_sha=base_sha[:8],
         )
 
-        # 2. Create branch
-        create_ref_resp = await client.post(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/refs",
-            headers=headers,
-            json={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
+        if use_fork:
+            bot_username = await _get_bot_username(client, headers)
+            fork_full_name = await _ensure_fork(client, headers, owner, repo, bot_username)
+            push_repo = fork_full_name
+            pr_head = f"{bot_username}:{branch_name}"
+        else:
+            if not is_bot and not permissions.get("push"):
+                log.error(
+                    "user_token_no_push_access",
+                    owner=owner,
+                    repo=repo,
+                    permissions=permissions,
+                )
+                raise PermissionError(
+                    f"GitHub token does not have push access to {owner}/{repo}. "
+                    "Please revoke and re-authorize the app at https://github.com/settings/applications "
+                    "to grant the 'repo' scope."
+                )
+            push_repo = f"{owner}/{repo}"
+            pr_head = branch_name
+
+        await _push_changes_to_repo(
+            client, headers, push_repo, branch_name, base_sha, optimized_files,
         )
-        create_ref_resp.raise_for_status()
-        log.info("pr_branch_created", branch=branch_name)
 
-        # 3. Create blobs for each optimized file
-        blob_shas: dict[str, str] = {}
-        for file_path, content in optimized_files.items():
-            blob_resp = await client.post(
-                f"{GITHUB_API}/repos/{owner}/{repo}/git/blobs",
-                headers=headers,
-                json={"content": content, "encoding": "utf-8"},
-            )
-            blob_resp.raise_for_status()
-            blob_shas[file_path] = blob_resp.json()["sha"]
-
-        # 4. Get the base tree
-        commit_resp = await client.get(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/commits/{base_sha}",
-            headers=headers,
-        )
-        commit_resp.raise_for_status()
-        base_tree_sha = commit_resp.json()["tree"]["sha"]
-
-        # 5. Create a new tree with the changed files
-        tree_items = [
-            {
-                "path": path,
-                "mode": "100644",
-                "type": "blob",
-                "sha": sha,
-            }
-            for path, sha in blob_shas.items()
-        ]
-        tree_resp = await client.post(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/trees",
-            headers=headers,
-            json={"base_tree": base_tree_sha, "tree": tree_items},
-        )
-        tree_resp.raise_for_status()
-        new_tree_sha = tree_resp.json()["sha"]
-
-        # 6. Create a commit on the new tree (attributed to CodeMark)
-        commit_payload: dict = {
-            "message": "perf: CodeMark automated optimizations",
-            "tree": new_tree_sha,
-            "parents": [base_sha],
-            "author": {
-                "name": "CodeMark",
-                "email": "codemark-bot@users.noreply.github.com",
-            },
-        }
-        new_commit_resp = await client.post(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/commits",
-            headers=headers,
-            json=commit_payload,
-        )
-        new_commit_resp.raise_for_status()
-        new_commit_sha = new_commit_resp.json()["sha"]
-
-        # 7. Point the branch at the new commit
-        update_ref_resp = await client.patch(
-            f"{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{branch_name}",
-            headers=headers,
-            json={"sha": new_commit_sha},
-        )
-        update_ref_resp.raise_for_status()
-
-        # 8. Open the pull request
         pr_body = _build_pr_body(comparison)
         pr_resp = await client.post(
             f"{GITHUB_API}/repos/{owner}/{repo}/pulls",
             headers=headers,
             json={
                 "title": "perf: CodeMark automated optimizations",
-                "head": branch_name,
+                "head": pr_head,
                 "base": default_branch,
                 "body": pr_body,
             },
@@ -256,5 +453,5 @@ async def create_optimization_pr(
         pr_resp.raise_for_status()
         pr_url = pr_resp.json()["html_url"]
 
-        log.info("pr_created", pr_url=pr_url, files=len(optimized_files))
+        log.info("pr_created", pr_url=pr_url, files=len(optimized_files), use_fork=use_fork)
         return pr_url
