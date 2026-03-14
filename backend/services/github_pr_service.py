@@ -34,7 +34,7 @@ def _build_headers(token: str) -> dict[str, str]:
 
 def _build_pr_body(comparison: dict) -> str:
     """Build a markdown PR body from the comparison report."""
-    score = comparison.get("codemark_score", {})
+    score = comparison.get("benchy_score", {})
     functions = comparison.get("functions", [])
     summary = comparison.get("summary", "")
     sandbox = comparison.get("sandbox_specs", "")

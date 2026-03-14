@@ -140,7 +140,12 @@ async def create_pr_node(state: AgentState) -> dict:
 
     if not optimized_files:
         log.warning("create_pr_skipped", reason="no optimized files")
-        return {**state, "pr_url": ""}
+        return {
+            **state,
+            "pr_url": "",
+            "pr_status": "skipped",
+            "pr_error": "No optimized files to create PR",
+        }
 
     try:
         pr_url = await create_optimization_pr(
@@ -153,14 +158,29 @@ async def create_pr_node(state: AgentState) -> dict:
         return {
             **state,
             "pr_url": pr_url,
+            "pr_status": "success",
+            "pr_error": None,
             "messages": state.get("messages", []) + [f"Pull request created: {pr_url}"],
         }
     except Exception as e:
-        log.error("create_pr_failed", error=str(e), traceback=traceback.format_exc())
+        error_str = str(e).lower()
+
+        # Detect permission errors
+        # GitHub returns 404 (not 403) for write operations when token lacks push access
+        if "write permission" in error_str or "403" in error_str or "permission" in error_str or "404" in error_str or "not found" in error_str:
+            pr_status = "permission_denied"
+            pr_error = "GitHub token does not have write permission to this repository. Please use a token with the 'repo' scope."
+        else:
+            pr_status = "failed"
+            pr_error = f"Failed to create pull request: {e}"
+
+        log.error("create_pr_failed", error=str(e), pr_status=pr_status, traceback=traceback.format_exc())
         return {
             **state,
             "pr_url": "",
-            "messages": state.get("messages", []) + [f"PR creation failed: {e}"],
+            "pr_status": pr_status,
+            "pr_error": pr_error,
+            "messages": state.get("messages", []) + [pr_error],
         }
 
 

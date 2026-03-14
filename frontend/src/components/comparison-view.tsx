@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, GitPullRequest, FileCode, AlertCircle } from "lucide-react";
+import { ExternalLink, GitPullRequest, FileCode, AlertCircle, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { ComparisonReport } from "@/lib/api";
@@ -9,12 +9,16 @@ interface PullRequestViewProps {
   prUrl: string;
   optimizedFiles: Record<string, string>;
   comparison: ComparisonReport | null;
+  prStatus?: string;
+  prError?: string | null;
 }
 
 export function PullRequestView({
   prUrl,
   optimizedFiles,
   comparison,
+  prStatus,
+  prError,
 }: PullRequestViewProps) {
   const files = Object.keys(optimizedFiles);
   const score = comparison?.benchy_score;
@@ -31,14 +35,33 @@ export function PullRequestView({
   }
 
   if (!prUrl) {
+    const isPermissionError = prStatus === "permission_denied" || prStatus === "repo_not_found";
     return (
       <Card className="bg-neutral-900 border-neutral-800">
         <CardContent className="py-12 text-center text-neutral-500">
-          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-yellow-500/70" />
-          <p className="text-sm">
-            PR creation was skipped or failed. The optimized code is still
-            available in the results.
-          </p>
+          {isPermissionError ? (
+            <>
+              <ShieldAlert className="mx-auto mb-3 h-8 w-8 text-red-500/70" />
+              <p className="text-sm font-medium text-red-400 mb-1">
+                {prStatus === "permission_denied"
+                  ? "Write permission denied"
+                  : "Repository not found"}
+              </p>
+              <p className="text-sm text-neutral-400">
+                {prError || "Could not create pull request. Check your GitHub token permissions."}
+              </p>
+              <p className="text-xs text-neutral-600 mt-3">
+                The optimized code is still available in the results.
+              </p>
+            </>
+          ) : (
+            <>
+              <AlertCircle className="mx-auto mb-3 h-8 w-8 text-yellow-500/70" />
+              <p className="text-sm">
+                {prError || "PR creation was skipped or failed. The optimized code is still available in the results."}
+              </p>
+            </>
+          )}
         </CardContent>
       </Card>
     );

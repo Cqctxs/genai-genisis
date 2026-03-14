@@ -146,6 +146,6 @@ class FunctionComparison(BaseModel):
 
 class ComparisonReport(BaseModel):
     functions: list[FunctionComparison]
-    codemark_score: CodeMarkScore
+    benchy_score: CodeMarkScore
     summary: str
     sandbox_specs: str = ""

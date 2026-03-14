@@ -196,6 +196,8 @@ export default function DashboardPage() {
                     prUrl={results.pr_url ?? ""}
                     optimizedFiles={results.optimized_files ?? {}}
                     comparison={results.comparison ?? null}
+                    prStatus={results.pr_status}
+                    prError={results.pr_error}
                   />
                 )}
               </ErrorBoundary>

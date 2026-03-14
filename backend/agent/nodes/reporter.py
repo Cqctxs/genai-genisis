@@ -73,11 +73,11 @@ Calculate the CodeMark score and generate the full comparison report."""
 
     log.info(
         "report_complete",
-        score_before=report.codemark_score.overall_before,
-        score_after=report.codemark_score.overall_after,
-        time_score=report.codemark_score.time_score,
-        memory_score=report.codemark_score.memory_score,
-        complexity_score=report.codemark_score.complexity_score,
+        score_before=report.benchy_score.overall_before,
+        score_after=report.benchy_score.overall_after,
+        time_score=report.benchy_score.time_score,
+        memory_score=report.benchy_score.memory_score,
+        complexity_score=report.benchy_score.complexity_score,
         functions_compared=len(report.functions),
         summary=report.summary[:200],
     )
@@ -97,6 +97,6 @@ Calculate the CodeMark score and generate the full comparison report."""
         **state,
         "comparison": report.model_dump(),
         "messages": state.get("messages", []) + [
-            f"CodeMark Score: {report.codemark_score.overall_before:.0f} -> {report.codemark_score.overall_after:.0f}"
+            f"CodeMark Score: {report.benchy_score.overall_before:.0f} -> {report.benchy_score.overall_after:.0f}"
         ],
     }

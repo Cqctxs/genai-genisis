@@ -100,6 +100,8 @@ export interface JobResult {
   final_results: any[];
   analysis: any;
   pr_url: string;
+  pr_status?: string;
+  pr_error?: string | null;
 }
 
 export async function startAnalysis(

@@ -142,7 +142,14 @@ async def get_results(job_id: str):
     if job["status"] == "failed":
         raise HTTPException(status_code=500, detail=job.get("error", "Unknown error"))
 
-    return job.get("result", {})
+    result = job.get("result", {})
+
+    # Expose PR status and error for frontend to display
+    result["pr_status"] = result.get("pr_status", "unknown")
+    result["pr_error"] = result.get("pr_error")
+    result["pr_url"] = result.get("pr_url", "")
+
+    return result
 
 
 @app.get("/api/health")
