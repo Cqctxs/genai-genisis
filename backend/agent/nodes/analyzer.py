@@ -59,14 +59,29 @@ CRITICAL SANDBOX CONSTRAINTS:
 - Copy the target function's source code directly into the benchmark script
 - Create mock/stub data instead of importing real modules
 
-For Python: Use pyinstrument for profiling. Copy the target function into the script,
-set up minimal test data, and measure execution time and memory. Output timing in JSON format
-to stdout like: {"function": "name", "avg_time_ms": 123.4, "memory_peak_mb": 45.6, "iterations": 100}
+INPUT SIZE — THIS IS CRITICAL:
+- Use input sizes large enough to reveal algorithmic complexity differences.
+- For array/list operations: N = 10 000 minimum (50 000 preferred).
+- For nested loop / O(n²) patterns: N = 5 000–10 000 so quadratic cost is measurable.
+- For map/dict lookups: N = 50 000+ entries.
+- For I/O-bound code: simulate at least 20 sequential operations.
+- For string operations: use strings of 10 000+ characters.
+- NEVER use trivially small inputs (N < 100). Small inputs hide algorithmic improvements
+  behind constant-factor overhead and produce misleading benchmark results.
+- Run at least 50 iterations to get a stable average.
+
+For Python: Use time.perf_counter() for timing. Copy the target function into the script,
+set up realistic-sized test data (see INPUT SIZE above), and measure execution time.
+Output timing in JSON format to stdout like:
+{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
 For JavaScript/TypeScript: Use require() for imports (NOT import syntax). Use performance.now() for timing.
-Copy the target function into the script, set up mock test data, and output JSON results to stdout in the same format.
+Copy the target function into the script, set up realistic-sized test data (see INPUT SIZE above),
+and output JSON results to stdout in the same format.
 Node.js runs in CommonJS mode, so use require() not import statements.
 Only require() Node.js built-in modules.
+
+Do NOT include any memory measurement code. Memory is measured automatically by the runtime wrapper.
 
 The script must be completely self-contained - copy function code inline, mock all dependencies.
 Print ONLY the JSON result object to stdout."""

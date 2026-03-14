@@ -29,15 +29,28 @@ The benchmark script runs inside an isolated sandbox where:
   no process.memoryUsage(). Memory is measured automatically by the runtime wrapper.
 - Focus ONLY on timing.
 
+## INPUT SIZE — THIS IS CRITICAL
+
+- Use input sizes large enough to reveal algorithmic complexity differences.
+- For array/list operations: N = 10 000 minimum (50 000 preferred).
+- For nested loop / O(n²) patterns: N = 5 000–10 000 so quadratic cost is measurable.
+- For map/dict lookups: N = 50 000+ entries.
+- For I/O-bound code: simulate at least 20 sequential operations.
+- For string operations: use strings of 10 000+ characters.
+- NEVER use trivially small inputs (N < 100). Small inputs hide algorithmic improvements
+  behind constant-factor overhead and produce misleading benchmark results.
+- Run at least 50 iterations to get a stable average.
+
 For Python: Use time.perf_counter() or timeit to measure execution time. Write scripts that
-import the target functions from the repo, set up minimal realistic test data, run multiple
-iterations, and output a single JSON object on the LAST line of stdout:
+import the target functions from the repo, set up realistic-sized test data (see INPUT SIZE above),
+run at least 50 iterations, and output a single JSON object on the LAST line of stdout:
 {"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
 For JavaScript/TypeScript: Use require() (CommonJS) NOT import (ESM). The sandbox runs
 scripts with plain `node` in CommonJS mode. Use `const { performance } = require("perf_hooks")`
-for timing. Write scripts that require target functions from the repo, set up test data,
-run multiple iterations, and output a single JSON object on the LAST line of stdout:
+for timing. Write scripts that require target functions from the repo, set up realistic-sized
+test data (see INPUT SIZE above), run at least 50 iterations, and output a single JSON object
+on the LAST line of stdout:
 {"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
 Any debug/progress output must go to stderr or earlier stdout lines — the LAST line of stdout

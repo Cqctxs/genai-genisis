@@ -11,7 +11,7 @@ FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + DEP_INSTALL_TIMEOUT + 30  # headroom
 app = modal.App("codemark-benchmarks")
 
 python_image = modal.Image.debian_slim(python_version="3.12").pip_install(
-    "pyinstrument", "memory_profiler"
+    "pyinstrument", "memory_profiler", "time", "json"
 )
 
 node_image = modal.Image.debian_slim().apt_install("nodejs", "npm")
