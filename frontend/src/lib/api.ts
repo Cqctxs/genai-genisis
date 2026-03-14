@@ -37,10 +37,17 @@ export interface StreamEvent {
   data: string;
 }
 
+export type NodeType = "api" | "llm" | "db" | "condition" | "function";
+export type EdgeType = "call" | "branch_true" | "branch_false" | "loop_back";
+
 export interface GraphNode {
   id: string;
   label: string;
   file: string;
+  node_type: NodeType;
+  inputs?: Record<string, string>;
+  outputs?: Record<string, string>;
+  metadata?: Record<string, string>;
   avg_time_ms: number | null;
   memory_mb: number | null;
   severity: string | null;
@@ -52,6 +59,7 @@ export interface GraphEdge {
   source: string;
   target: string;
   label: string;
+  edge_type: EdgeType;
 }
 
 export interface GraphData {

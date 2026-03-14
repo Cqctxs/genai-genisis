@@ -91,6 +91,22 @@ class GraphNode(BaseModel):
     id: str
     label: str
     file: str
+    node_type: str = Field(
+        default="function",
+        description='One of: "api", "llm", "db", "condition", "function"',
+    )
+    inputs: dict[str, str] | None = Field(
+        default=None,
+        description="Key-value pairs describing the node's input parameters",
+    )
+    outputs: dict[str, str] | None = Field(
+        default=None,
+        description="Key-value pairs describing the node's return values",
+    )
+    metadata: dict[str, str] | None = Field(
+        default=None,
+        description="Extra context (e.g. HTTP method, DB table, model name)",
+    )
     avg_time_ms: float | None = None
     memory_mb: float | None = None
     severity: str | None = None
@@ -102,6 +118,10 @@ class GraphEdge(BaseModel):
     source: str
     target: str
     label: str = ""
+    edge_type: str = Field(
+        default="call",
+        description='One of: "call", "branch_true", "branch_false", "loop_back"',
+    )
 
 
 class GraphData(BaseModel):
