@@ -126,15 +126,18 @@ async def run_optimization_pipeline(
     }
 
     final_state = {}
+    sent_message_count = 0
     async for event in compiled_graph.astream(initial_state):
         for node_name, state_update in event.items():
             log.info("node_completed", node=node_name)
             if queue and "messages" in state_update:
-                for msg in state_update["messages"]:
+                new_messages = state_update["messages"][sent_message_count:]
+                for msg in new_messages:
                     await queue.put({
                         "event": "progress",
                         "data": json.dumps({"node": node_name, "message": msg}),
                     })
+                sent_message_count = len(state_update["messages"])
             final_state.update(state_update)
 
     result = {
