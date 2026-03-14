@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Inter, Fira_Code } from "next/font/google";
 import localFont from "next/font/local";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
@@ -10,8 +10,8 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const firaCode = Fira_Code({
+  variable: "--font-fira-code",
   subsets: ["latin"],
 });
 
@@ -33,7 +33,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`dark ${inter.variable} ${geistMono.variable} ${junicode.variable}`}>
+    <html lang="en" className={`dark ${inter.variable} ${firaCode.variable} ${junicode.variable}`}>
       <body className="antialiased bg-dark text-light">
 
         <Providers>
