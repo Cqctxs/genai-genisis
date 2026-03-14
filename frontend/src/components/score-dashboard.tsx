@@ -38,30 +38,41 @@ function AnimatedScore({ target, duration = 2 }: { target: number; duration?: nu
 
 function SubScoreBar({
   label,
+  before,
   value,
   max,
   weight,
   color,
 }: {
   label: string;
+  before: number;
   value: number;
   max: number;
   weight: string;
   color: string;
 }) {
   const pct = Math.min((value / max) * 100, 100);
+  const beforePct = Math.min((before / max) * 100, 100);
+  const improved = value >= before;
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
         <span className="text-light/60">{label}</span>
         <span className="text-light/40 tabular-nums">
-          {value.toLocaleString()} <span className="text-light/25">· {weight}</span>
+          <span className="text-light/25 line-through mr-1">{before.toLocaleString()}</span>
+          <span className={improved ? "text-accent-green" : "text-accent-red"}>{value.toLocaleString()}</span>
+          <span className="text-light/25"> · {weight}</span>
         </span>
       </div>
-      <div className="h-1.5 rounded-full bg-light/10 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-light/10 overflow-hidden relative">
+        {/* before marker */}
+        <div
+          className="absolute top-0 h-full rounded-full bg-light/20"
+          style={{ width: `${beforePct}%` }}
+        />
         <motion.div
-          className="h-full rounded-full"
-          style={{ backgroundColor: color }}
+          className="absolute top-0 h-full rounded-full"
+          style={{ backgroundColor: color, opacity: improved ? 1 : 0.5 }}
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
           transition={{ duration: 1.2, ease: "easeOut", delay: 0.3 }}
@@ -209,6 +220,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
             <div className="max-w-xs mx-auto space-y-2 pt-2">
               <SubScoreBar
                 label="Time"
+                before={benchy_score.time_score_before}
                 value={benchy_score.time_score}
                 max={20000}
                 weight="40%"
@@ -216,6 +228,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
               />
               <SubScoreBar
                 label="Memory"
+                before={benchy_score.memory_score_before}
                 value={benchy_score.memory_score}
                 max={20000}
                 weight="30%"
@@ -223,6 +236,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
               />
               <SubScoreBar
                 label="Complexity"
+                before={benchy_score.complexity_score_before}
                 value={benchy_score.complexity_score}
                 max={20000}
                 weight="30%"
