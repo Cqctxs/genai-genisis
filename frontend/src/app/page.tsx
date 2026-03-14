@@ -62,7 +62,7 @@ export default function LandingPage() {
       </div>
 
       <footer className="absolute bottom-8 text-xs text-neutral-600">
-        Built with LangGraph + Gemini + E2B
+        Built with LangGraph + Gemini + Modal
       </footer>
     </div>
   );
