@@ -59,10 +59,25 @@ async def _regenerate_benchmark(
         "imports": [i for i in ast_map.get("imports", []) if i.get("file") == bench.file],
     }
 
+    # Detect timeout errors and add specific guidance
+    is_timeout = "timeout" in error_msg.lower() or "timed out" in error_msg.lower()
+    timeout_guidance = ""
+    if is_timeout:
+        timeout_guidance = """
+### CRITICAL: Execution Timeout Detected
+The script took too long to run. The function has high algorithmic complexity.
+**You MUST reduce the input size or number of iterations significantly:**
+- Start with N=1000 or fewer (not 10,000+)
+- Use 5-10 iterations only (not 50+)
+- Prioritize completing in under 15 seconds total
+- Smaller inputs reveal algorithmic differences better than slow large inputs
+"""
+
     fix_prompt = f"""## Previous Benchmark Script FAILED at Runtime
 
 The following benchmark script for `{bench.target_function}` crashed when executed
 in the sandbox. Regenerate a FIXED version that avoids the error.
+{timeout_guidance}
 
 ### Error
 ```

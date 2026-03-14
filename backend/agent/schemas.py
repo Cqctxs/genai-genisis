@@ -153,8 +153,11 @@ class CodeMarkScore(BaseModel):
     overall_before: float
     overall_after: float
     time_score: float
+    time_score_before: float
     memory_score: float
+    memory_score_before: float
     complexity_score: float
+    complexity_score_before: float
     radar_data: list[RadarAxis]
 
 

@@ -77,8 +77,11 @@ export interface BenchyScore {
   overall_before: number;
   overall_after: number;
   time_score: number;
+  time_score_before: number;
   memory_score: number;
+  memory_score_before: number;
   complexity_score: number;
+  complexity_score_before: number;
   radar_data: RadarAxis[];
 }
 
