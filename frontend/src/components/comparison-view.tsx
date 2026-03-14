@@ -21,9 +21,9 @@ export function PullRequestView({
 
   if (!prUrl && files.length === 0) {
     return (
-      <Card className="bg-neutral-900 border-neutral-800">
-        <CardContent className="py-12 text-center text-neutral-500">
-          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-neutral-600" />
+      <Card className="bg-light/5">
+        <CardContent className="py-12 text-center text-light/40">
+          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-light/30" />
           No optimizations were generated for this repository.
         </CardContent>
       </Card>
@@ -32,9 +32,9 @@ export function PullRequestView({
 
   if (!prUrl) {
     return (
-      <Card className="bg-neutral-900 border-neutral-800">
-        <CardContent className="py-12 text-center text-neutral-500">
-          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-yellow-500/70" />
+      <Card className="bg-light/5">
+        <CardContent className="py-12 text-center text-light/40">
+          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-accent-orange/70" />
           <p className="text-sm">
             PR creation was skipped or failed. The optimized code is still
             available in the results.
@@ -48,21 +48,20 @@ export function PullRequestView({
 
   return (
     <div className="space-y-4">
-      {/* PR link card */}
-      <Card className="bg-neutral-900 border-neutral-800">
+      <Card className="bg-light/5">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
-            <GitPullRequest className="h-5 w-5 text-green-500" />
+            <GitPullRequest className="h-5 w-5 text-accent-green" />
             Pull Request Created
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg bg-neutral-800/60 px-4 py-3">
+          <div className="flex items-center justify-between rounded-lg bg-light/10 px-4 py-3">
             <div className="min-w-0 flex-1">
-              <p className="truncate font-mono text-sm text-neutral-200">
+              <p className="truncate font-mono text-sm text-light/80">
                 perf: Benchy automated optimizations
               </p>
-              <p className="mt-0.5 text-xs text-neutral-500">
+              <p className="mt-0.5 text-xs text-light/40">
                 #{prNumber} &middot; {files.length} file
                 {files.length !== 1 ? "s" : ""} changed
               </p>
@@ -77,30 +76,19 @@ export function PullRequestView({
             </Button>
           </div>
 
-          {/* Score summary */}
           {score && (
             <div className="grid grid-cols-3 gap-3">
-              <ScoreChip
-                label="Time"
-                value={score.time_score}
-              />
-              <ScoreChip
-                label="Memory"
-                value={score.memory_score}
-              />
-              <ScoreChip
-                label="Complexity"
-                value={score.complexity_score}
-              />
+              <ScoreChip label="Time" value={score.time_score} color="text-accent-blue" />
+              <ScoreChip label="Memory" value={score.memory_score} color="text-accent-purple" />
+              <ScoreChip label="Complexity" value={score.complexity_score} color="text-accent-orange" />
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Changed files */}
-      <Card className="bg-neutral-900 border-neutral-800">
+      <Card className="bg-light/5">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-neutral-400">
+          <CardTitle className="text-sm text-light/50">
             Changed Files
           </CardTitle>
         </CardHeader>
@@ -109,10 +97,10 @@ export function PullRequestView({
             {files.map((file) => (
               <li
                 key={file}
-                className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-neutral-800/50"
+                className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-light/5"
               >
-                <FileCode className="h-4 w-4 shrink-0 text-blue-400" />
-                <span className="truncate font-mono text-neutral-300">
+                <FileCode className="h-4 w-4 shrink-0 text-accent-blue" />
+                <span className="truncate font-mono text-light/70">
                   {file}
                 </span>
               </li>
@@ -121,19 +109,18 @@ export function PullRequestView({
         </CardContent>
       </Card>
 
-      {/* PR description preview */}
       {comparison && (
-        <Card className="bg-neutral-900 border-neutral-800">
+        <Card className="bg-light/5">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-neutral-400">
+            <CardTitle className="text-sm text-light/50">
               PR Description Preview
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3 text-sm text-neutral-300">
+            <div className="space-y-3 text-sm text-light/70">
               {score && (
                 <p>
-                  <span className="font-medium text-neutral-200">
+                  <span className="font-medium text-light/80">
                     Benchy Score:
                   </span>{" "}
                   {score.overall_before.toFixed(0)} →{" "}
@@ -145,7 +132,7 @@ export function PullRequestView({
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="border-b border-neutral-800 text-neutral-500">
+                      <tr className="border-b border-light/10 text-light/40">
                         <th className="pb-2 pr-4 font-medium">Function</th>
                         <th className="pb-2 pr-4 font-medium">File</th>
                         <th className="pb-2 pr-4 font-medium text-right">
@@ -163,12 +150,12 @@ export function PullRequestView({
                       {comparison.functions.map((fn) => (
                         <tr
                           key={`${fn.file}-${fn.function_name}`}
-                          className="border-b border-neutral-800/50"
+                          className="border-b border-light/5"
                         >
                           <td className="py-1.5 pr-4 font-mono">
                             {fn.function_name}
                           </td>
-                          <td className="py-1.5 pr-4 font-mono text-neutral-500">
+                          <td className="py-1.5 pr-4 font-mono text-light/40">
                             {fn.file}
                           </td>
                           <td className="py-1.5 pr-4 text-right tabular-nums">
@@ -177,7 +164,7 @@ export function PullRequestView({
                           <td className="py-1.5 pr-4 text-right tabular-nums">
                             {fn.new_time_ms.toFixed(2)}ms
                           </td>
-                          <td className="py-1.5 text-right tabular-nums text-green-400">
+                          <td className="py-1.5 text-right tabular-nums text-accent-green">
                             {fn.speedup_factor.toFixed(1)}x
                           </td>
                         </tr>
@@ -188,7 +175,7 @@ export function PullRequestView({
               )}
 
               {comparison.summary && (
-                <p className="text-neutral-400">{comparison.summary}</p>
+                <p className="text-light/50">{comparison.summary}</p>
               )}
             </div>
           </CardContent>
@@ -198,11 +185,11 @@ export function PullRequestView({
   );
 }
 
-function ScoreChip({ label, value }: { label: string; value: number }) {
+function ScoreChip({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="rounded-lg bg-neutral-800/60 px-3 py-2 text-center">
-      <p className="text-xs text-neutral-500">{label}</p>
-      <p className="mt-0.5 text-lg font-semibold tabular-nums text-neutral-200">
+    <div className="rounded-lg bg-light/10 px-3 py-2 text-center">
+      <p className="text-xs text-light/40">{label}</p>
+      <p className={`mt-0.5 text-lg font-semibold tabular-nums ${color}`}>
         {value.toFixed(0)}
       </p>
     </div>

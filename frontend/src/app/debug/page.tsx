@@ -142,267 +142,285 @@ export default function DebugPage() {
   const [telemetryPhase, setTelemetryPhase] = useState<Phase>("complete");
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-neutral-800 px-6 py-3 flex items-center justify-between sticky top-0 bg-neutral-950/90 backdrop-blur-sm z-50">
-        <h1 className="text-lg font-semibold tracking-tight">
-          Benchy
-          <span className="text-xs ml-2 text-neutral-500 font-normal font-sans">Debug Mode</span>
-        </h1>
-        <a href="/" className="text-sm text-neutral-500 hover:text-white transition-colors">
-          ← Back to app
-        </a>
-      </header>
-
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-12">
-        {/* ── Fonts ── */}
-        <Section title="Fonts">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <FontSample label="font-sans (Inter)" className="font-sans" />
-            <FontSample label="font-serif (Junicode Bold Italic)" className="font-serif" />
-            <FontSample label="font-mono (Geist Mono)" className="font-mono" />
+    <div className="h-screen bg-light p-3 sm:p-4 flex flex-col">
+      <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden">
+        <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
+          <div className="flex items-center gap-3">
+            <a href="/" className="font-serif text-xl hover:text-light/80 transition-colors">
+              Benchy
+            </a>
+            <span className="text-xs font-mono text-light/40">debug mode</span>
           </div>
-        </Section>
+          <a href="/" className="text-xs font-mono text-light/60 hover:text-light transition-colors">
+            ← back to app
+          </a>
+        </nav>
 
-        {/* ── Typography ── */}
-        <Section title="Typography">
-          <div className="space-y-4">
-            <h1 className="text-5xl font-bold tracking-tight">Heading 1 — The quick brown fox</h1>
-            <h2 className="text-3xl font-semibold tracking-tight">Heading 2 — Jumped over the lazy dog</h2>
-            <h3 className="text-2xl font-medium">Heading 3 — Pack my box with five dozen liquor jugs</h3>
-            <h4 className="text-xl">Heading 4 — How vexingly quick daft zebras jump</h4>
-            <p className="text-base text-neutral-300">
-              Body text — Benchy analyzes your codebase using AST parsing, profiles bottlenecks in a sandboxed environment, and
-              produces optimized code with a before/after performance score. Built with LangGraph, Gemini, and E2B.
-            </p>
-            <p className="text-sm text-neutral-500">
-              Small text — Benchmarked on E2B Cloud Sandbox · 2 vCPU · 4 GB RAM · Python 3.12
-            </p>
-            <p className="font-serif text-3xl text-blue-400">
-              Serif heading — Performance at a glance
-            </p>
-          </div>
-        </Section>
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 sm:px-10 py-8">
+          <div className="max-w-7xl mx-auto w-full space-y-12">
 
-        {/* ── Colors ── */}
-        <Section title="Theme Colors">
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
-            {[
-              ["bg-background", "Background"],
-              ["bg-foreground", "Foreground"],
-              ["bg-card", "Card"],
-              ["bg-primary", "Primary"],
-              ["bg-secondary", "Secondary"],
-              ["bg-muted", "Muted"],
-              ["bg-accent", "Accent"],
-              ["bg-destructive", "Destructive"],
-              ["bg-border", "Border"],
-              ["bg-ring", "Ring"],
-              ["bg-blue-500", "Blue 500"],
-              ["bg-green-400", "Green 400"],
-            ].map(([cls, label]) => (
-              <div key={cls} className="space-y-1.5">
-                <div className={`h-12 rounded-lg border border-neutral-700 ${cls}`} />
-                <p className="text-[10px] text-neutral-500 text-center">{label}</p>
+            {/* Fonts */}
+            <Section title="Fonts">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <FontSample label="font-sans (Inter)" className="font-sans" />
+                <FontSample label="font-serif (Junicode Bold Italic)" className="font-serif" />
+                <FontSample label="font-mono (Fira Code)" className="font-mono" />
               </div>
-            ))}
-          </div>
-        </Section>
+            </Section>
 
-        {/* ── Buttons ── */}
-        <Section title="Buttons">
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="default">Default</Button>
-              <Button variant="secondary">Secondary</Button>
-              <Button variant="outline">Outline</Button>
-              <Button variant="ghost">Ghost</Button>
-              <Button variant="destructive">Destructive</Button>
-              <Button variant="link">Link</Button>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button size="xs">Extra Small</Button>
-              <Button size="sm">Small</Button>
-              <Button size="default">Default</Button>
-              <Button size="lg">Large</Button>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button disabled>Disabled</Button>
-              <Button className="bg-blue-600 text-white hover:bg-blue-700">Custom Blue</Button>
-              <Button className="bg-white text-black hover:bg-neutral-200">GitHub Style</Button>
-            </div>
-          </div>
-        </Section>
+            {/* Typography */}
+            <Section title="Typography">
+              <div className="space-y-4">
+                <h1 className="text-5xl font-bold tracking-tight">Heading 1 — The quick brown fox</h1>
+                <h2 className="text-3xl font-semibold tracking-tight">Heading 2 — Jumped over the lazy dog</h2>
+                <h3 className="text-2xl font-medium">Heading 3 — Pack my box with five dozen liquor jugs</h3>
+                <h4 className="text-xl">Heading 4 — How vexingly quick daft zebras jump</h4>
+                <p className="text-base text-light/70">
+                  Body text — Benchy analyzes your codebase using AST parsing, profiles bottlenecks in a sandboxed environment, and
+                  produces optimized code with a before/after performance score. Built with LangGraph, Gemini, and E2B.
+                </p>
+                <p className="text-sm text-light/40">
+                  Small text — Benchmarked on E2B Cloud Sandbox · 2 vCPU · 4 GB RAM · Python 3.12
+                </p>
+                <p className="font-serif text-3xl text-accent-blue">
+                  Serif heading — Performance at a glance
+                </p>
+              </div>
+            </Section>
 
-        {/* ── Badges ── */}
-        <Section title="Badges">
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge variant="default">Default</Badge>
-            <Badge variant="secondary">Secondary</Badge>
-            <Badge variant="outline">Outline</Badge>
-            <Badge variant="destructive">Destructive</Badge>
-            <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">Custom Blue</Badge>
-            <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Success</Badge>
-            <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">Warning</Badge>
-          </div>
-        </Section>
+            {/* Colors */}
+            <Section title="Theme Colors">
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                {[
+                  ["bg-light", "Light"],
+                  ["bg-dark", "Dark"],
+                  ["bg-accent-red", "Accent Red"],
+                  ["bg-accent-orange", "Accent Orange"],
+                  ["bg-accent-green", "Accent Green"],
+                  ["bg-accent-blue", "Accent Blue"],
+                  ["bg-accent-purple", "Accent Purple"],
+                  ["bg-primary", "Primary"],
+                  ["bg-secondary", "Secondary"],
+                  ["bg-muted", "Muted"],
+                  ["bg-destructive", "Destructive"],
+                  ["bg-border", "Border"],
+                ].map(([cls, label]) => (
+                  <div key={cls} className="space-y-1.5">
+                    <div className={`h-12 rounded-lg ring-1 ring-light/15 ${cls}`} />
+                    <p className="text-[10px] text-light/40 text-center">{label}</p>
+                  </div>
+                ))}
+              </div>
+            </Section>
 
-        {/* ── Inputs ── */}
-        <Section title="Inputs">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl">
-            <Input placeholder="Default input" />
-            <Input placeholder="Disabled input" disabled />
-            <Input placeholder="With value" defaultValue="https://github.com/acme/repo" />
-          </div>
-        </Section>
-
-        {/* ── Cards ── */}
-        <Section title="Cards">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="bg-neutral-900 border-neutral-800">
-              <CardHeader>
-                <CardTitle className="text-sm">Default Card</CardTitle>
-                <CardDescription>A simple card with header and content.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-neutral-400">Card body content goes here. This demonstrates the standard card layout.</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-neutral-900 border-neutral-800">
-              <CardContent className="pt-4 pb-4 space-y-2">
-                <p className="text-xs text-neutral-500 uppercase tracking-wide">Execution Time</p>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-neutral-500 line-through text-sm">509.2ms</span>
-                  <span className="text-xl font-semibold text-white">127.4ms</span>
+            {/* Buttons */}
+            <Section title="Buttons">
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button variant="default">Default</Button>
+                  <Button variant="secondary">Secondary</Button>
+                  <Button variant="outline">Outline</Button>
+                  <Button variant="ghost">Ghost</Button>
+                  <Button variant="destructive">Destructive</Button>
+                  <Button variant="link">Link</Button>
                 </div>
-                <p className="text-xs font-medium text-green-400">+75% faster</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-neutral-900 border-neutral-800">
-              <CardHeader>
-                <CardTitle className="text-sm">With Footer</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-20 w-full rounded-lg" />
-              </CardContent>
-              <CardFooter>
-                <Button size="sm" variant="ghost" className="ml-auto">View details</Button>
-              </CardFooter>
-            </Card>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button size="xs">Extra Small</Button>
+                  <Button size="sm">Small</Button>
+                  <Button size="default">Default</Button>
+                  <Button size="lg">Large</Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button disabled>Disabled</Button>
+                  <Button className="bg-accent-blue text-light hover:bg-accent-blue/80">Accent Blue</Button>
+                  <Button className="bg-accent-green text-dark hover:bg-accent-green/80">Accent Green</Button>
+                  <Button className="bg-light text-dark hover:bg-light/80">Light Style</Button>
+                </div>
+              </div>
+            </Section>
+
+            {/* Badges */}
+            <Section title="Badges">
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge variant="default">Default</Badge>
+                <Badge variant="secondary">Secondary</Badge>
+                <Badge variant="outline">Outline</Badge>
+                <Badge variant="destructive">Destructive</Badge>
+                <Badge className="bg-accent-red/20 text-accent-red border-accent-red/30">Red</Badge>
+                <Badge className="bg-accent-orange/20 text-accent-orange border-accent-orange/30">Orange</Badge>
+                <Badge className="bg-accent-green/20 text-accent-green border-accent-green/30">Green</Badge>
+                <Badge className="bg-accent-blue/20 text-accent-blue border-accent-blue/30">Blue</Badge>
+                <Badge className="bg-accent-purple/20 text-accent-purple border-accent-purple/30">Purple</Badge>
+              </div>
+            </Section>
+
+            {/* Inputs */}
+            <Section title="Inputs">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl">
+                <Input placeholder="Default input" />
+                <Input placeholder="Disabled input" disabled />
+                <Input placeholder="With value" defaultValue="https://github.com/acme/repo" />
+              </div>
+            </Section>
+
+            {/* Cards */}
+            <Section title="Cards">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-light/5">
+                  <CardHeader>
+                    <CardTitle className="text-sm">Default Card</CardTitle>
+                    <CardDescription>A simple card with header and content.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-light/50">Card body content goes here. This demonstrates the standard card layout.</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-light/5">
+                  <CardContent className="pt-4 pb-4 space-y-2">
+                    <p className="text-xs text-light/40 uppercase tracking-wide">Execution Time</p>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-light/40 line-through text-sm">509.2ms</span>
+                      <span className="text-xl font-semibold text-light">127.4ms</span>
+                    </div>
+                    <p className="text-xs font-medium text-accent-green">+75% faster</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-light/5">
+                  <CardHeader>
+                    <CardTitle className="text-sm">With Footer</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Skeleton className="h-20 w-full rounded-lg" />
+                  </CardContent>
+                  <CardFooter>
+                    <Button size="sm" variant="ghost" className="ml-auto">View details</Button>
+                  </CardFooter>
+                </Card>
+              </div>
+            </Section>
+
+            {/* Tabs */}
+            <Section title="Tabs">
+              <Tabs defaultValue="tab1">
+                <TabsList className="bg-light/5 border border-light/10">
+                  <TabsTrigger value="tab1">Overview</TabsTrigger>
+                  <TabsTrigger value="tab2">Analytics</TabsTrigger>
+                  <TabsTrigger value="tab3">Settings</TabsTrigger>
+                  <TabsTrigger value="disabled" disabled>Disabled</TabsTrigger>
+                </TabsList>
+                <TabsContent value="tab1" className="mt-4">
+                  <Card className="bg-light/5">
+                    <CardContent className="py-6">
+                      <p className="text-sm text-light/50">Tab 1 content — Overview panel with summary information.</p>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+                <TabsContent value="tab2" className="mt-4">
+                  <Card className="bg-light/5">
+                    <CardContent className="py-6">
+                      <p className="text-sm text-light/50">Tab 2 content — Analytics panel with charts and data.</p>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+                <TabsContent value="tab3" className="mt-4">
+                  <Card className="bg-light/5">
+                    <CardContent className="py-6">
+                      <p className="text-sm text-light/50">Tab 3 content — Settings and configuration options.</p>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+            </Section>
+
+            {/* Skeleton */}
+            <Section title="Skeleton Loading">
+              <div className="space-y-3 max-w-md">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-32 w-full rounded-lg" />
+              </div>
+            </Section>
+
+            <div className="border-t border-light/10 pt-12">
+              <h2 className="text-2xl font-semibold tracking-tight mb-8">Feature Components</h2>
+            </div>
+
+            {/* Live Telemetry */}
+            <Section title="Live Telemetry">
+              <div className="flex flex-wrap gap-2 mb-4">
+                {PHASES.map((p) => (
+                  <Button
+                    key={p}
+                    size="xs"
+                    variant={telemetryPhase === p ? "default" : "outline"}
+                    onClick={() => setTelemetryPhase(p)}
+                  >
+                    {p}
+                  </Button>
+                ))}
+              </div>
+              <ErrorBoundary>
+                <LiveTelemetry phase={telemetryPhase} messages={FAKE_MESSAGES} />
+              </ErrorBoundary>
+            </Section>
+
+            {/* Performance Graph */}
+            <Section title="Performance Graph">
+              <ErrorBoundary>
+                <PerformanceGraph graphData={FAKE_GRAPH_DATA} />
+              </ErrorBoundary>
+            </Section>
+
+            {/* Score Dashboard */}
+            <Section title="Score Dashboard">
+              <ErrorBoundary>
+                <ScoreDashboard comparison={FAKE_COMPARISON} />
+              </ErrorBoundary>
+            </Section>
+
+            {/* Pull Request View */}
+            <Section title="Pull Request View">
+              <ErrorBoundary>
+                <PullRequestView
+                  prUrl="https://github.com/acme/data-pipeline/pull/42"
+                  optimizedFiles={FAKE_OPTIMIZED_FILES}
+                  comparison={FAKE_COMPARISON}
+                />
+              </ErrorBoundary>
+            </Section>
+
+            {/* Error Boundary Demo */}
+            <Section title="Error Boundary">
+              <ErrorBoundary>
+                <Card className="bg-light/5 ring-accent-red/20">
+                  <CardContent className="py-8 text-center space-y-3">
+                    <p className="text-sm text-accent-red">Something went wrong</p>
+                    <p className="text-xs text-light/40 font-mono">
+                      TypeError: Cannot read properties of undefined (reading &apos;map&apos;)
+                    </p>
+                    <Button variant="ghost" size="sm">
+                      Try again
+                    </Button>
+                  </CardContent>
+                </Card>
+              </ErrorBoundary>
+            </Section>
           </div>
-        </Section>
-
-        {/* ── Tabs ── */}
-        <Section title="Tabs">
-          <Tabs defaultValue="tab1">
-            <TabsList className="bg-neutral-900 border border-neutral-800">
-              <TabsTrigger value="tab1">Overview</TabsTrigger>
-              <TabsTrigger value="tab2">Analytics</TabsTrigger>
-              <TabsTrigger value="tab3">Settings</TabsTrigger>
-              <TabsTrigger value="disabled" disabled>Disabled</TabsTrigger>
-            </TabsList>
-            <TabsContent value="tab1" className="mt-4">
-              <Card className="bg-neutral-900 border-neutral-800">
-                <CardContent className="py-6">
-                  <p className="text-sm text-neutral-400">Tab 1 content — Overview panel with summary information.</p>
-                </CardContent>
-              </Card>
-            </TabsContent>
-            <TabsContent value="tab2" className="mt-4">
-              <Card className="bg-neutral-900 border-neutral-800">
-                <CardContent className="py-6">
-                  <p className="text-sm text-neutral-400">Tab 2 content — Analytics panel with charts and data.</p>
-                </CardContent>
-              </Card>
-            </TabsContent>
-            <TabsContent value="tab3" className="mt-4">
-              <Card className="bg-neutral-900 border-neutral-800">
-                <CardContent className="py-6">
-                  <p className="text-sm text-neutral-400">Tab 3 content — Settings and configuration options.</p>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </Section>
-
-        {/* ── Skeleton ── */}
-        <Section title="Skeleton Loading">
-          <div className="space-y-3 max-w-md">
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-32 w-full rounded-lg" />
-          </div>
-        </Section>
-
-        <div className="border-t border-neutral-800 pt-12">
-          <h2 className="text-2xl font-semibold tracking-tight mb-8">Feature Components</h2>
         </div>
 
-        {/* ── Live Telemetry ── */}
-        <Section title="Live Telemetry">
-          <div className="flex flex-wrap gap-2 mb-4">
-            {PHASES.map((p) => (
-              <Button
-                key={p}
-                size="xs"
-                variant={telemetryPhase === p ? "default" : "outline"}
-                onClick={() => setTelemetryPhase(p)}
-              >
-                {p}
-              </Button>
-            ))}
+        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-accent-purple" />
+            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
+            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
           </div>
-          <ErrorBoundary>
-            <LiveTelemetry phase={telemetryPhase} messages={FAKE_MESSAGES} />
-          </ErrorBoundary>
-        </Section>
-
-        {/* ── Performance Graph ── */}
-        <Section title="Performance Graph">
-          <ErrorBoundary>
-            <PerformanceGraph graphData={FAKE_GRAPH_DATA} />
-          </ErrorBoundary>
-        </Section>
-
-        {/* ── Score Dashboard ── */}
-        <Section title="Score Dashboard">
-          <ErrorBoundary>
-            <ScoreDashboard comparison={FAKE_COMPARISON} />
-          </ErrorBoundary>
-        </Section>
-
-        {/* ── Pull Request View ── */}
-        <Section title="Pull Request View">
-          <ErrorBoundary>
-            <PullRequestView
-              prUrl="https://github.com/acme/data-pipeline/pull/42"
-              optimizedFiles={FAKE_OPTIMIZED_FILES}
-              comparison={FAKE_COMPARISON}
-            />
-          </ErrorBoundary>
-        </Section>
-
-        {/* ── Error Boundary Demo ── */}
-        <Section title="Error Boundary">
-          <ErrorBoundary>
-            <Card className="bg-neutral-900 border-red-900/50">
-              <CardContent className="py-8 text-center space-y-3">
-                <p className="text-sm text-red-400">Something went wrong</p>
-                <p className="text-xs text-neutral-500 font-mono">
-                  TypeError: Cannot read properties of undefined (reading &apos;map&apos;)
-                </p>
-                <Button variant="ghost" size="sm">
-                  Try again
-                </Button>
-              </CardContent>
-            </Card>
-          </ErrorBoundary>
-        </Section>
-      </main>
-
-      <footer className="border-t border-neutral-800 py-4 text-center text-xs text-neutral-600">
-        Benchy Debug Mode — All components rendered with synthetic data
-      </footer>
+          <p className="font-mono text-[11px] text-light/30">
+            ● debug mode · all components rendered with synthetic data
+          </p>
+          <span className="w-2 h-2 rounded-full bg-light/20" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -411,8 +429,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-3">
-        <h3 className="text-sm font-medium text-neutral-500 uppercase tracking-widest">{title}</h3>
-        <div className="flex-1 h-px bg-neutral-800" />
+        <h3 className="text-sm font-medium text-light/40 uppercase tracking-widest">{title}</h3>
+        <div className="flex-1 h-px bg-light/10" />
       </div>
       {children}
     </section>
@@ -421,12 +439,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function FontSample({ label, className }: { label: string; className: string }) {
   return (
-    <Card className="bg-neutral-900 border-neutral-800">
+    <Card className="bg-light/5">
       <CardContent className="pt-4 space-y-3">
-        <p className="text-[10px] text-neutral-500 uppercase tracking-widest">{label}</p>
+        <p className="text-[10px] text-light/40 uppercase tracking-widest">{label}</p>
         <p className={`${className} text-3xl`}>Aa Bb Cc 123</p>
-        <p className={`${className} text-lg text-neutral-300`}>The quick brown fox jumps over the lazy dog</p>
-        <p className={`${className} text-sm text-neutral-500`}>
+        <p className={`${className} text-lg text-light/70`}>The quick brown fox jumps over the lazy dog</p>
+        <p className={`${className} text-sm text-light/40`}>
           ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789
         </p>
       </CardContent>

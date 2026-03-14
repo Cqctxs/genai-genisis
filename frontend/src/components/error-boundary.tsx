@@ -31,10 +31,10 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <Card className="bg-neutral-900 border-red-900/50">
+        <Card className="bg-light/5 ring-accent-red/20">
           <CardContent className="py-8 text-center space-y-3">
-            <p className="text-sm text-red-400">Something went wrong</p>
-            <p className="text-xs text-neutral-500 font-mono">
+            <p className="text-sm text-accent-red">Something went wrong</p>
+            <p className="text-xs text-light/40 font-mono">
               {this.state.error?.message}
             </p>
             <Button

@@ -106,17 +106,16 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
   };
 
   return (
-    <Card className="bg-neutral-900 border-neutral-800">
+    <Card className="bg-light/5">
       <CardContent className="pt-5 pb-4 space-y-4">
-        {/* Mode tabs */}
-        <div className="flex items-center gap-1 bg-neutral-950 rounded-lg p-1 w-fit">
+        <div className="flex items-center gap-1 bg-dark rounded-lg p-1 w-fit">
           <button
             type="button"
             onClick={() => setMode("browse")}
             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
               mode === "browse"
-                ? "bg-neutral-800 text-white"
-                : "text-neutral-500 hover:text-neutral-300"
+                ? "bg-light/15 text-light"
+                : "text-light/40 hover:text-light/70"
             }`}
           >
             My Repositories
@@ -126,8 +125,8 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
             onClick={() => setMode("url")}
             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
               mode === "url"
-                ? "bg-neutral-800 text-white"
-                : "text-neutral-500 hover:text-neutral-300"
+                ? "bg-light/15 text-light"
+                : "text-light/40 hover:text-light/70"
             }`}
           >
             Enter URL
@@ -136,28 +135,26 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
 
         {mode === "browse" && (
           <div className="space-y-3">
-            {/* Search */}
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search repositories..."
-              className="bg-neutral-950 border-neutral-700 placeholder:text-neutral-600"
+              className="bg-dark border-light/15 placeholder:text-light/30"
               disabled={isLoading}
             />
 
-            {/* Repo list */}
-            <div className="max-h-72 overflow-y-auto rounded-lg border border-neutral-800 bg-neutral-950 scrollbar-thin">
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-light/10 bg-dark scrollbar-thin">
               {fetchState === "loading" && (
                 <div className="p-3 space-y-3">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="flex items-start gap-3 p-3">
-                      <Skeleton className="w-8 h-8 rounded-full shrink-0 bg-neutral-800" />
+                      <Skeleton className="w-8 h-8 rounded-full shrink-0 bg-light/10" />
                       <div className="flex-1 space-y-2">
-                        <Skeleton className="h-4 w-48 bg-neutral-800" />
-                        <Skeleton className="h-3 w-72 bg-neutral-800" />
+                        <Skeleton className="h-4 w-48 bg-light/10" />
+                        <Skeleton className="h-3 w-72 bg-light/10" />
                         <div className="flex gap-3">
-                          <Skeleton className="h-3 w-16 bg-neutral-800" />
-                          <Skeleton className="h-3 w-12 bg-neutral-800" />
+                          <Skeleton className="h-3 w-16 bg-light/10" />
+                          <Skeleton className="h-3 w-12 bg-light/10" />
                         </div>
                       </div>
                     </div>
@@ -167,11 +164,11 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
 
               {fetchState === "error" && (
                 <div className="p-6 text-center">
-                  <p className="text-sm text-red-400">{fetchError}</p>
+                  <p className="text-sm text-accent-red">{fetchError}</p>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="mt-2 text-neutral-400"
+                    className="mt-2 text-light/50"
                     onClick={() => setFetchState("idle")}
                   >
                     Retry
@@ -180,7 +177,7 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
               )}
 
               {fetchState === "loaded" && filtered.length === 0 && (
-                <div className="p-6 text-center text-sm text-neutral-500">
+                <div className="p-6 text-center text-sm text-light/40">
                   {search ? "No repositories match your search" : "No repositories found"}
                 </div>
               )}
@@ -194,10 +191,10 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
                       type="button"
                       disabled={isLoading}
                       onClick={() => setSelectedRepo(isSelected ? null : repo)}
-                      className={`w-full text-left px-4 py-3 flex items-start gap-3 border-b border-neutral-800/50 last:border-b-0 transition-colors ${
+                      className={`w-full text-left px-4 py-3 flex items-start gap-3 border-b border-light/5 last:border-b-0 transition-colors ${
                         isSelected
-                          ? "bg-blue-600/10 border-l-2 border-l-blue-500"
-                          : "hover:bg-neutral-800/50"
+                          ? "bg-accent-blue/10 border-l-2 border-l-accent-blue"
+                          : "hover:bg-light/5"
                       }`}
                     >
                       <img
@@ -207,28 +204,28 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium text-neutral-200 truncate">
+                          <span className="text-sm font-medium text-light/80 truncate">
                             {repo.full_name}
                           </span>
                           {repo.private && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-neutral-700 text-neutral-400">
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-light/15 text-light/50">
                               Private
                             </Badge>
                           )}
                           {repo.fork && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-neutral-700 text-neutral-500">
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-light/15 text-light/40">
                               Fork
                             </Badge>
                           )}
                         </div>
                         {repo.description && (
-                          <p className="text-xs text-neutral-500 mt-0.5 truncate">
+                          <p className="text-xs text-light/40 mt-0.5 truncate">
                             {repo.description}
                           </p>
                         )}
                         <div className="flex items-center gap-3 mt-1.5">
                           {repo.language && (
-                            <span className="flex items-center gap-1 text-xs text-neutral-500">
+                            <span className="flex items-center gap-1 text-xs text-light/40">
                               <span
                                 className="w-2.5 h-2.5 rounded-full inline-block"
                                 style={{
@@ -239,12 +236,12 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
                             </span>
                           )}
                           {repo.stargazers_count > 0 && (
-                            <span className="text-xs text-neutral-500">
+                            <span className="text-xs text-light/40">
                               &#9733; {repo.stargazers_count.toLocaleString()}
                             </span>
                           )}
                           {repo.updated_at && (
-                            <span className="text-xs text-neutral-600">
+                            <span className="text-xs text-light/30">
                               {formatRelativeTime(repo.updated_at)}
                             </span>
                           )}
@@ -252,7 +249,7 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
                       </div>
                       {isSelected && (
                         <div className="shrink-0 mt-1">
-                          <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <svg className="w-5 h-5 text-accent-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                           </svg>
                         </div>
@@ -262,16 +259,15 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
                 })}
             </div>
 
-            {/* Analyze button */}
             <div className="flex justify-end">
               <Button
                 onClick={handleBrowseAnalyze}
                 disabled={isLoading || !selectedRepo}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6"
+                className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6"
               >
                 {isLoading ? (
                   <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span className="w-4 h-4 border-2 border-light/30 border-t-light rounded-full animate-spin" />
                     Analyzing...
                   </span>
                 ) : (
@@ -292,19 +288,19 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
                   if (urlError) setUrlError("");
                 }}
                 placeholder="https://github.com/owner/repository"
-                className="bg-neutral-950 border-neutral-700 placeholder:text-neutral-600"
+                className="bg-dark border-light/15 placeholder:text-light/30"
                 disabled={isLoading}
               />
-              {urlError && <p className="text-xs text-red-400">{urlError}</p>}
+              {urlError && <p className="text-xs text-accent-red">{urlError}</p>}
             </div>
             <Button
               type="submit"
               disabled={isLoading || !url.trim()}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6"
+              className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6"
             >
               {isLoading ? (
                 <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span className="w-4 h-4 border-2 border-light/30 border-t-light rounded-full animate-spin" />
                   Analyzing...
                 </span>
               ) : (
