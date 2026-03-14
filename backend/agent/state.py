@@ -1,0 +1,18 @@
+from typing import Any, TypedDict
+
+
+class AgentState(TypedDict, total=False):
+    repo_url: str
+    repo_path: str
+    github_token: str
+    file_tree: list[str]
+    ast_map: dict[str, Any]
+    analysis: dict[str, Any]
+    benchmark_code: list[dict[str, Any]]
+    initial_results: list[dict[str, Any]]
+    graph_data: dict[str, Any]
+    optimized_files: dict[str, str]
+    final_results: list[dict[str, Any]]
+    comparison: dict[str, Any]
+    messages: list[str]
+    error: str | None
