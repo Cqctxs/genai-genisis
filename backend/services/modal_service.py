@@ -261,6 +261,39 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     }
 
 
+@app.function(image=python_image, timeout=30)
+def _get_sandbox_specs() -> dict:
+    """Collect hardware info from inside the Modal container."""
+    import os
+    import platform
+    import subprocess
+
+    cpu_info = {"model": "unknown", "cores": os.cpu_count() or 0}
+    try:
+        lscpu = subprocess.check_output(["lscpu"], text=True)
+        for line in lscpu.splitlines():
+            if line.startswith("Model name:"):
+                cpu_info["model"] = line.split(":", 1)[1].strip()
+            elif line.startswith("CPU(s):"):
+                cpu_info["cores"] = int(line.split(":", 1)[1].strip())
+    except Exception:
+        pass
+
+    try:
+        ram_gb = round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / (1024**3), 1)  # type: ignore[attr-defined]
+    except (AttributeError, ValueError):
+        ram_gb = 0.0
+
+    return {
+        "cpu_model": cpu_info["model"],
+        "cpu_cores": cpu_info["cores"],
+        "ram_gb": ram_gb,
+        "python_version": platform.python_version(),
+        "os": platform.platform(),
+        "arch": platform.machine(),
+    }
+
+
 _fn_cache: dict[str, modal.Function] = {}
 
 
@@ -354,18 +387,26 @@ async def run_benchmark(
     return result
 
 
+_specs_cache: dict | None = None
+
+
 async def get_sandbox_specs() -> str:
     """Return a description of the Modal sandbox environment."""
-    py_specs = (
-        "Python sandbox: Debian Slim, Python 3.12, "
-        "1 vCPU (AMD EPYC, shared), 256 MiB RAM"
-    )
-    js_specs = (
-        "JavaScript sandbox: Debian Slim, Node.js (system), "
-        "1 vCPU (AMD EPYC, shared), 256 MiB RAM"
-    )
+    global _specs_cache
+    if _specs_cache is None:
+        try:
+            fn = _lookup_function("_get_sandbox_specs")
+            _specs_cache = await asyncio.to_thread(fn.remote)
+        except Exception:
+            return "Modal Cloud Container - Python 3.12, isolated execution"
+
+    s = _specs_cache
+    if s is None:
+        return "Modal Cloud Container - Python 3.12, isolated execution"
     return (
-        f"Modal Cloud (AWS us-east-1) · "
-        f"{py_specs} · {js_specs} · "
-        f"Isolated per-run containers, no GPU"
+        f"Modal Cloud Container\n"
+        f"CPU: {s['cpu_model']} ({s['cpu_cores']} cores)\n"
+        f"RAM: {s['ram_gb']} GB\n"
+        f"Python: {s['python_version']}\n"
+        f"OS: {s['os']} ({s['arch']})"
     )
