@@ -99,7 +99,6 @@ def _should_stop_retrying(state: AgentState) -> tuple[bool, str]:
 async def _generate_initial_benchmark_details(state: AgentState) -> dict:
     """Generate benchmark detail summaries early, in parallel with optimization."""
     from agent.nodes.reporter import _generate_benchmark_details
-    from agent.schemas import FunctionComparison
     from services.scoring_service import compute_benchy_score
 
     benchmark_code = state.get("benchmark_code", [])
@@ -304,12 +303,6 @@ async def optimization_pipeline(
     opt_task = optimize_node(state)
     bench_task = _generate_initial_benchmark_details(state)
     viz_result, opt_result, bench_result = await asyncio.gather(viz_task, opt_task, bench_task)
-    # ── Visualize (background) + Optimize (critical path) ────────────────
-    # Visualization is only needed for the final result payload — run it in
-    # the background so the optimization retry loop can start immediately.
-    await rt.broadcast("Generating visualization and optimizations...")
-    viz_bg_task = asyncio.create_task(visualize_node(AgentState(**state)))
-    opt_result = await optimize_node(state)
 
     base_msgs = list(state.get("messages", []))
     base_count = len(base_msgs)
@@ -317,7 +310,8 @@ async def optimization_pipeline(
 
     state["optimized_files"] = opt_result.get("optimized_files", {})
     state["benchmark_details"] = bench_result.get("benchmark_details", [])
-    state["messages"] = base_msgs + new_viz_msgs + new_opt_msgs
+    state["graph_data"] = viz_result.get("graph_data", {})
+    state["messages"] = base_msgs + new_opt_msgs
 
     # ── Optimization retry loop ──────────────────────────────────────────
     # Replaces LangGraph's conditional edges:
@@ -344,15 +338,6 @@ async def optimization_pipeline(
 
         await rt.broadcast("Re-optimizing based on benchmark feedback...")
         state.update(await optimize_node(state))
-
-    # ── Collect visualization result ─────────────────────────────────────
-    # The background task was started before the retry loop; collect it now.
-    try:
-        viz_result = await viz_bg_task
-        state["graph_data"] = viz_result.get("graph_data", {})
-    except Exception as e:
-        log.warning("visualize_background_failed", error=str(e))
-        state.setdefault("graph_data", {})
 
     # ── Report ───────────────────────────────────────────────────────────
     await rt.broadcast("Generating CodeMark report...")
@@ -385,7 +370,7 @@ async def run_optimization_pipeline(
     log.info("pipeline_start", repo_url=repo_url, optimization_bias=optimization_bias)
     pipeline_start = time.monotonic()
 
-    broadcast_cb = None
+    broadcast_cb = None  # type: ignore[assignment]
     if queue:
 
         async def broadcast_cb(msg: str) -> None:
