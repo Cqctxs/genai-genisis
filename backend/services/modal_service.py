@@ -10,30 +10,27 @@ FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + DEP_INSTALL_TIMEOUT + 30  # headroom
 
 app = modal.App("codemark-benchmarks")
 
-python_image = (
-    modal.Image.debian_slim(python_version="3.12")
-    .pip_install(
-        "pyinstrument",
-        "memory_profiler",
-        "numpy",
-        "pandas",
-        "requests",
-        "aiohttp",
-        "pydantic",
-        "sqlalchemy",
-        "fastapi",
-        "flask",
-        "django",
-        "celery",
-        "redis",
-        "httpx",
-        "beautifulsoup4",
-        "lxml",
-        "pillow",
-        "scipy",
-        "scikit-learn",
-        "pytest",
-    )
+python_image = modal.Image.debian_slim(python_version="3.12").pip_install(
+    "pyinstrument",
+    "memory_profiler",
+    "numpy",
+    "pandas",
+    "requests",
+    "aiohttp",
+    "pydantic",
+    "sqlalchemy",
+    "fastapi",
+    "flask",
+    "django",
+    "celery",
+    "redis",
+    "httpx",
+    "beautifulsoup4",
+    "lxml",
+    "pillow",
+    "scipy",
+    "scikit-learn",
+    "pytest",
 )
 
 node_image = (
@@ -41,13 +38,13 @@ node_image = (
     .apt_install("curl")
     .run_commands(
         "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash",
-        "bash -i -c 'nvm install --lts && nvm use --lts'",
+        'bash -c "source /root/.nvm/nvm.sh && nvm install --lts && nvm use --lts"',
     )
     .run_commands(
-        "bash -i -c 'ln -sf /root/.nvm/versions/node/*/bin/node /usr/local/bin/node && ln -sf /root/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && ln -sf /root/.nvm/versions/node/*/bin/npx /usr/local/bin/npx'"
+        "bash -c 'ln -sf /root/.nvm/versions/node/*/bin/node /usr/local/bin/node && ln -sf /root/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && ln -sf /root/.nvm/versions/node/*/bin/npx /usr/local/bin/npx'"
     )
     .run_commands(
-        "bash -i -c 'npm install -g "
+        "npm install -g "
         "lodash@latest express@latest react@latest react-dom@latest next@latest "
         "axios@latest framer-motion@latest zod@latest "
         "typescript@latest ts-node@latest "
@@ -57,7 +54,7 @@ node_image = (
         "jsonwebtoken@latest bcrypt@latest uuid@latest "
         "dayjs@latest moment@latest date-fns@latest "
         "cheerio@latest node-fetch@latest "
-        "@tanstack/react-query@latest swr@latest'"
+        "@tanstack/react-query@latest swr@latest"
     )
     .env({"NODE_PATH": "/usr/local/lib/node_modules"})
 )
@@ -182,9 +179,9 @@ def _esm_to_cjs(code: str) -> str:
         code,
     )
     # export default X  →  module.exports = X
-    code = re.sub(r'export\s+default\s+', 'module.exports = ', code)
+    code = re.sub(r"export\s+default\s+", "module.exports = ", code)
     # export { X }  →  (just remove, not needed for benchmarks)
-    code = re.sub(r'export\s*\{[^}]*\};?', '', code)
+    code = re.sub(r"export\s*\{[^}]*\};?", "", code)
     return code
 
 
@@ -225,7 +222,11 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     return {
         "stdout": result.stdout,
         "stderr": result.stderr,
-        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {result.stderr[-500:]}",
+        "error": (
+            None
+            if result.returncode == 0
+            else f"Exit code {result.returncode}: {result.stderr[-500:]}"
+        ),
     }
 
 
@@ -255,7 +256,11 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     return {
         "stdout": result.stdout,
         "stderr": result.stderr,
-        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {result.stderr[-500:]}",
+        "error": (
+            None
+            if result.returncode == 0
+            else f"Exit code {result.returncode}: {result.stderr[-500:]}"
+        ),
     }
 
 
@@ -319,7 +324,11 @@ async def run_benchmark(
     files = repo_files or {}
     func_name = "_run_python_benchmark" if language == "python" else "_run_js_benchmark"
 
-    repo_file_list = "\n".join(f"  {p} ({len(c)} chars)" for p, c in files.items()) if files else "  (none)"
+    repo_file_list = (
+        "\n".join(f"  {p} ({len(c)} chars)" for p, c in files.items())
+        if files
+        else "  (none)"
+    )
 
     log_block(
         f"MODAL CALL [{language}]",

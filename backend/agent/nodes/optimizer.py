@@ -8,7 +8,8 @@ from pydantic_ai import Agent
 from agent.schemas import AnalysisResult, Hotspot, OptimizationChange, OptimizationPlan
 from agent.state import AgentState
 from services.gemini_service import (
-    GEMINI_FLASH,
+    GEMINI_PRO,
+    PRO_SETTINGS,
     run_agent_logged,
 )
 from services.github_service import read_file
@@ -169,17 +170,17 @@ not just different from your last attempt.
 """
 
 
-def _create_optimizer_agent() -> Agent:
-    """Create an optimizer agent."""
+def _create_optimizer_agent() -> Agent[None, OptimizationPlan]:
+    """Create an optimizer agent using Gemini Pro with MEDIUM thinking."""
     agent = Agent(
-        GEMINI_FLASH,
+        GEMINI_PRO,
         output_type=OptimizationPlan,
         system_prompt=OPTIMIZER_PROMPT,
     )
 
     agent._codemark_system_prompt = OPTIMIZER_PROMPT  # type: ignore[attr-defined]
     agent._codemark_output_type = "OptimizationPlan"  # type: ignore[attr-defined]
-    agent._model_str = GEMINI_FLASH  # type: ignore[attr-defined]
+    agent._model_str = GEMINI_PRO  # type: ignore[attr-defined]
 
     return agent
 
@@ -264,8 +265,10 @@ Optimize the bottleneck functions in this file."""
 
     try:
         result = await run_agent_logged(
-            agent, prompt,
+            agent,  # type: ignore[arg-type]
+            prompt,
             node_name=f"optimize_{file_path.split('/')[-1]}",
+            model_settings=PRO_SETTINGS,
         )
         plan: OptimizationPlan = result.output  # type: ignore[assignment]
 

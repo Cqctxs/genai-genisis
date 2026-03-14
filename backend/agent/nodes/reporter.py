@@ -52,10 +52,11 @@ async def report_node(state: AgentState) -> dict:
     sandbox_specs = await get_sandbox_specs()
     summary = await _generate_summary(function_comparisons, hotspots, score)
 
-    # Generate detailed benchmark information
-    benchmark_details = await _generate_benchmark_details(
+    # Always regenerate benchmark details with final results to show accurate before/after metrics
+    benchmark_details_objs = await _generate_benchmark_details(
         benchmark_code, initial_results, final_results, function_comparisons
     )
+    benchmark_details = [bd.model_dump() for bd in benchmark_details_objs]
 
     report = ComparisonReport(
         functions=function_comparisons,
@@ -87,7 +88,7 @@ async def report_node(state: AgentState) -> dict:
     return {
         **state,
         "comparison": report.model_dump(),
-        "benchmark_details": [bd.model_dump() for bd in benchmark_details],
+        "benchmark_details": benchmark_details,
         "messages": state.get("messages", []) + [
             f"CodeMark Score: {report.benchy_score.overall_before:.0f} -> {report.benchy_score.overall_after:.0f}"
         ],

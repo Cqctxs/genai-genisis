@@ -3,6 +3,10 @@
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
+// @ts-expect-error - react-syntax-highlighter doesn't have type definitions
+import SyntaxHighlighter from "react-syntax-highlighter";
+// @ts-expect-error - react-syntax-highlighter doesn't have type definitions
+import { atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import { RepoInput } from "@/components/repo-input";
 import { LiveTelemetry } from "@/components/live-telemetry";
 import { PerformanceGraph } from "@/components/performance-graph";
@@ -228,9 +232,12 @@ export default function DashboardPage() {
                             </div>
 
                             {detail.summary && (
-                              <p className="text-sm text-light/70 italic border-l-2 border-light/20 pl-3 py-1">
-                                {detail.summary}
-                              </p>
+                              <div className="space-y-1">
+                                <p className="text-xs text-light/50">What this benchmark tests:</p>
+                                <p className="text-sm text-light/80 border-l-2 border-light/20 pl-3 py-1">
+                                  {detail.summary}
+                                </p>
+                              </div>
                             )}
 
                             <div className="grid grid-cols-2 gap-3 text-xs">
@@ -250,15 +257,25 @@ export default function DashboardPage() {
                               </div>
                             </div>
 
-                            <details className="text-xs">
-                              <summary className="cursor-pointer text-light/60 hover:text-light/80 py-2">
-                                View benchmark script ({detail.language})
-                              </summary>
-                              <pre className="mt-2 p-2 bg-light/10 rounded overflow-x-auto text-light/60 text-[11px]">
-                                {detail.script_content.slice(0, 500)}
-                                {detail.script_content.length > 500 && '...'}
-                              </pre>
-                            </details>
+                            <div className="space-y-2">
+                              <p className="text-xs text-light/50">Benchmark code ({detail.language}):</p>
+                              <div className="rounded overflow-hidden max-h-96">
+                                <SyntaxHighlighter
+                                  language={detail.language === "javascript" || detail.language === "typescript" ? "javascript" : "python"}
+                                  style={atomOneDark}
+                                  customStyle={{
+                                    margin: 0,
+                                    padding: "12px",
+                                    fontSize: "11px",
+                                    lineHeight: "1.5",
+                                    maxHeight: "400px",
+                                    overflow: "auto",
+                                  }}
+                                >
+                                  {detail.script_content}
+                                </SyntaxHighlighter>
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>

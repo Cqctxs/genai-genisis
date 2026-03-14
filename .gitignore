@@ -51,6 +51,7 @@ venv/
 # temp
 tmp/
 temp/
+.codemark-tmp/
 
 # plan (local only)
 plan.md

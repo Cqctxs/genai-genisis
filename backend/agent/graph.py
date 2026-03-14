@@ -61,7 +61,10 @@ def _should_stop_retrying(state: AgentState) -> tuple[bool, str]:
         return False, f"correctness failures in {failed_fns}, retrying optimization"
 
     if correctness_failures and retry_count >= MAX_OPTIMIZATION_RETRIES:
-        return True, "correctness failures remain after max retries, reverting broken files"
+        return (
+            True,
+            "correctness failures remain after max retries, reverting broken files",
+        )
 
     if retry_count >= MAX_OPTIMIZATION_RETRIES:
         return True, f"max retries reached ({retry_count})"
@@ -70,15 +73,50 @@ def _should_stop_retrying(state: AgentState) -> tuple[bool, str]:
         return True, f"missing results (initial={len(initial)}, final={len(final)})"
 
     if initial_total == 0 and final_total == 0:
-        return True, "all benchmarks returned 0ms (likely sandbox failures), skipping retry"
+        return (
+            True,
+            "all benchmarks returned 0ms (likely sandbox failures), skipping retry",
+        )
 
     if initial_total > 0 and final_total < initial_total:
-        return True, f"improvement detected ({initial_total:.1f}ms -> {final_total:.1f}ms)"
+        return (
+            True,
+            f"improvement detected ({initial_total:.1f}ms -> {final_total:.1f}ms)",
+        )
 
     if initial_total > 0 and abs(final_total - initial_total) / initial_total < 0.05:
-        return True, f"marginal difference ({initial_total:.1f}ms -> {final_total:.1f}ms, <5%), not worth retrying"
+        return (
+            True,
+            f"marginal difference ({initial_total:.1f}ms -> {final_total:.1f}ms, <5%), not worth retrying",
+        )
 
-    return False, f"no improvement ({initial_total:.1f}ms -> {final_total:.1f}ms), retrying"
+    return (
+        False,
+        f"no improvement ({initial_total:.1f}ms -> {final_total:.1f}ms), retrying",
+    )
+
+
+async def _generate_initial_benchmark_details(state: AgentState) -> dict:
+    """Generate benchmark detail summaries early, in parallel with optimization."""
+    from agent.nodes.reporter import _generate_benchmark_details
+    from services.scoring_service import compute_benchy_score
+
+    benchmark_code = state.get("benchmark_code", [])
+    initial_results = state.get("initial_results", [])
+    hotspots = state.get("analysis", {}).get("hotspots", [])
+
+    if not benchmark_code or not initial_results:
+        return {"benchmark_details": []}
+
+    # Compute comparisons from initial results (before optimization)
+    _, comparisons = compute_benchy_score(initial_results, initial_results, hotspots)
+
+    # Generate summaries for initial benchmarks
+    benchmark_details = await _generate_benchmark_details(
+        benchmark_code, initial_results, initial_results, comparisons
+    )
+
+    return {"benchmark_details": [bd.model_dump() for bd in benchmark_details]}
 
 
 async def _rerun_benchmarks(state: AgentState) -> dict:
@@ -150,9 +188,16 @@ async def _create_pr(state: AgentState) -> dict:
     except Exception as e:
         error_str = str(e).lower()
         permission_keywords = (
-            "permission", "403", "404", "not found", "push access", "write permission",
+            "permission",
+            "403",
+            "404",
+            "not found",
+            "push access",
+            "write permission",
         )
-        if isinstance(e, PermissionError) or any(kw in error_str for kw in permission_keywords):
+        if isinstance(e, PermissionError) or any(
+            kw in error_str for kw in permission_keywords
+        ):
             pr_status = "permission_denied"
             pr_error = str(e)
         else:
@@ -201,6 +246,7 @@ def _extract_result(state: AgentState) -> dict:
     return {
         "graph_data": state.get("graph_data", {}),
         "comparison": comparison,
+        "benchmark_details": state.get("benchmark_details", []),
         "optimized_files": state.get("optimized_files", {}),
         "initial_results": initial_results,
         "final_results": final_results,
@@ -212,7 +258,9 @@ def _extract_result(state: AgentState) -> dict:
 
 
 @rt.function_node
-async def optimization_pipeline(repo_url: str, github_token: str, optimization_bias: str = "balanced") -> dict:
+async def optimization_pipeline(
+    repo_url: str, github_token: str, optimization_bias: str = "balanced"
+) -> dict:
     """Main orchestration flow — replaces the LangGraph StateGraph.
 
     Each stage calls the existing node functions directly (their signatures
@@ -249,18 +297,20 @@ async def optimization_pipeline(repo_url: str, github_token: str, optimization_b
     await rt.broadcast("Streaming analysis and benchmarks per chunk...")
     state.update(await chunk_analyze_node(state))
 
-    # ── Visualize (background) + Optimize (critical path) ────────────────
-    # Visualization is only needed for the final result payload — run it in
-    # the background so the optimization retry loop can start immediately.
-    await rt.broadcast("Generating visualization and optimizations...")
-    viz_bg_task = asyncio.create_task(visualize_node(AgentState(**state)))
-    opt_result = await optimize_node(state)
+    # ── Parallel: visualize + optimize + generate benchmark summaries ────────
+    await rt.broadcast("Generating visualization, optimizations, and benchmark summaries...")
+    viz_task = visualize_node(state)
+    opt_task = optimize_node(state)
+    bench_task = _generate_initial_benchmark_details(state)
+    viz_result, opt_result, bench_result = await asyncio.gather(viz_task, opt_task, bench_task)
 
     base_msgs = list(state.get("messages", []))
     base_count = len(base_msgs)
     new_opt_msgs = opt_result.get("messages", [])[base_count:]
 
     state["optimized_files"] = opt_result.get("optimized_files", {})
+    state["benchmark_details"] = bench_result.get("benchmark_details", [])
+    state["graph_data"] = viz_result.get("graph_data", {})
     state["messages"] = base_msgs + new_opt_msgs
 
     # ── Optimization retry loop ──────────────────────────────────────────
@@ -288,15 +338,6 @@ async def optimization_pipeline(repo_url: str, github_token: str, optimization_b
 
         await rt.broadcast("Re-optimizing based on benchmark feedback...")
         state.update(await optimize_node(state))
-
-    # ── Collect visualization result ─────────────────────────────────────
-    # The background task was started before the retry loop; collect it now.
-    try:
-        viz_result = await viz_bg_task
-        state["graph_data"] = viz_result.get("graph_data", {})
-    except Exception as e:
-        log.warning("visualize_background_failed", error=str(e))
-        state.setdefault("graph_data", {})
 
     # ── Report ───────────────────────────────────────────────────────────
     await rt.broadcast("Generating CodeMark report...")
@@ -329,13 +370,16 @@ async def run_optimization_pipeline(
     log.info("pipeline_start", repo_url=repo_url, optimization_bias=optimization_bias)
     pipeline_start = time.monotonic()
 
-    broadcast_cb = None
+    broadcast_cb = None  # type: ignore[assignment]
     if queue:
+
         async def broadcast_cb(msg: str) -> None:
-            await queue.put({
-                "event": "progress",
-                "data": json.dumps({"node": "pipeline", "message": msg}),
-            })
+            await queue.put(
+                {
+                    "event": "progress",
+                    "data": json.dumps({"node": "pipeline", "message": msg}),
+                }
+            )
 
     flow = rt.Flow(
         "CodeMark Optimization",
@@ -349,5 +393,123 @@ async def run_optimization_pipeline(
 
     total_elapsed = time.monotonic() - pipeline_start
     log.info("pipeline_complete", total_time_s=round(total_elapsed, 1))
+
+    return result
+
+
+async def _run_local_pipeline(
+    files: dict[str, str],
+    language: str,
+    optimization_bias: str = "balanced",
+    broadcast: object = None,
+) -> dict:
+    """Pipeline variant for local files — no git clone, no PR creation."""
+    import shutil
+    import tempfile
+
+    async def _broadcast(msg: str) -> None:
+        if broadcast and callable(broadcast):
+            await broadcast(msg)
+
+    state: AgentState = {
+        "repo_url": "",
+        "github_token": "",
+        "optimization_bias": optimization_bias,
+        "messages": [],
+    }
+
+    # Write files to a temp directory so existing nodes work unchanged
+    temp_dir = tempfile.mkdtemp(prefix="codemark_local_")
+    for rel_path, content in files.items():
+        full_path = os.path.join(temp_dir, rel_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    state["repo_path"] = temp_dir
+    state["messages"].append("Local files loaded")
+
+    # ── Parse AST ────────────────────────────────────────────────────────
+    await _broadcast("Parsing codebase AST...")
+    state.update(await parse_ast_node(state))
+
+    # ── Triage ───────────────────────────────────────────────────────────
+    await _broadcast("Triaging codebase for hotspots...")
+    state.update(await triage_node(state))
+
+    # ── Streaming analysis + benchmarks ──────────────────────────────────
+    await _broadcast("Streaming analysis and benchmarks per chunk...")
+    state.update(await chunk_analyze_node(state))
+
+    # ── Optimize ─────────────────────────────────────────────────────────
+    await _broadcast("Generating optimizations...")
+    opt_result = await optimize_node(state)
+    state["optimized_files"] = opt_result.get("optimized_files", {})
+    state["messages"] = opt_result.get("messages", state["messages"])
+
+    # ── Optimization retry loop ──────────────────────────────────────────
+    for attempt in range(1, MAX_OPTIMIZATION_RETRIES + 2):
+        await _broadcast(f"Re-running benchmarks (attempt {attempt})...")
+        rerun_update = await _rerun_benchmarks(state)
+        state.update(rerun_update)
+
+        should_stop, reason = _should_stop_retrying(state)
+        log.info(
+            "should_retry_decision",
+            decision="report" if should_stop else "optimize",
+            reason=reason,
+            retry_count=state.get("retry_count", 0),
+        )
+
+        if should_stop:
+            if state.get("correctness_failures"):
+                state["optimized_files"] = _revert_broken_files(state)
+            break
+
+        await _broadcast("Re-optimizing based on benchmark feedback...")
+        state.update(await optimize_node(state))
+
+    # ── Report ───────────────────────────────────────────────────────────
+    await _broadcast("Generating CodeMark report...")
+    state.update(await report_node(state))
+
+    # ── Cleanup ──────────────────────────────────────────────────────────
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+    return _extract_result(state)
+
+
+async def run_local_optimization_pipeline(
+    files: dict[str, str],
+    language: str,
+    queue: asyncio.Queue | None = None,
+    optimization_bias: str = "balanced",
+) -> dict:
+    """Public entry point for local file analysis."""
+    log.info(
+        "local_pipeline_start",
+        num_files=len(files),
+        language=language,
+        optimization_bias=optimization_bias,
+    )
+    pipeline_start = time.monotonic()
+
+    broadcast_cb = None
+    if queue:
+
+        async def broadcast_cb(msg: str) -> None:
+            await queue.put(
+                {
+                    "event": "progress",
+                    "data": json.dumps({"node": "pipeline", "message": msg}),
+                }
+            )
+
+    result = await _run_local_pipeline(
+        files, language, optimization_bias, broadcast=broadcast_cb
+    )
+
+    total_elapsed = time.monotonic() - pipeline_start
+    log.info("local_pipeline_complete", total_time_s=round(total_elapsed, 1))
 
     return result
