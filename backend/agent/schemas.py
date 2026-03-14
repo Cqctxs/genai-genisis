@@ -50,6 +50,21 @@ class AnalysisResult(BaseModel):
     summary: str
 
 
+class TriageChunk(BaseModel):
+    chunk_id: str = Field(description="e.g. 'chunk_1', 'data_layer'")
+    label: str = Field(description="Human-readable chunk name, e.g. 'Database Layer'")
+    files: list[str] = Field(description="List of relative file paths in this chunk")
+    priority: int = Field(description="1 = highest priority, higher = lower priority")
+    reasoning: str = Field(description="Why these files are grouped and why this priority")
+
+
+class TriageResult(BaseModel):
+    language: str = Field(description="python or javascript/typescript")
+    chunks: list[TriageChunk]
+    total_files_scanned: int
+    summary: str = Field(description="High-level overview of codebase structure and likely bottleneck areas")
+
+
 class BenchmarkScript(BaseModel):
     target_function: str
     file: str

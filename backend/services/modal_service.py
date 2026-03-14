@@ -76,9 +76,14 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     }
 
 
+_fn_cache: dict[str, modal.Function] = {}
+
+
 def _lookup_function(name: str) -> modal.Function:
-    """Look up a deployed Modal function by name."""
-    return modal.Function.from_name("codemark-benchmarks", name)
+    """Look up a deployed Modal function by name, with caching."""
+    if name not in _fn_cache:
+        _fn_cache[name] = modal.Function.from_name("codemark-benchmarks", name)
+    return _fn_cache[name]
 
 
 async def run_benchmark(

@@ -1,13 +1,11 @@
 import asyncio
 import json
 import time
-import traceback
 
 import structlog
 from langgraph.graph import END, StateGraph
 
-from agent.nodes.analyzer import analyze_node, parse_ast_node
-from agent.nodes.benchmarker import generate_benchmarks_node
+from agent.nodes.analyzer import parse_ast_node, triage_node, chunk_analyze_node
 from agent.nodes.optimizer import optimize_node
 from agent.nodes.reporter import report_node
 from agent.nodes.runner import run_benchmarks_node
@@ -17,7 +15,7 @@ from services.github_service import cleanup_repo, clone_repo
 
 log = structlog.get_logger()
 
-MAX_OPTIMIZATION_RETRIES = 2
+MAX_OPTIMIZATION_RETRIES = 1
 
 
 async def clone_node(state: AgentState) -> dict:
@@ -30,6 +28,30 @@ async def clone_node(state: AgentState) -> dict:
         **state,
         "repo_path": repo_path,
         "messages": ["Repository cloned successfully"],
+    }
+
+
+async def visualize_and_optimize_node(state: AgentState) -> dict:
+    """Run visualization and optimization in parallel after benchmarks."""
+    log.info("visualize_and_optimize_start")
+
+    viz_task = visualize_node(state)
+    opt_task = optimize_node(state)
+
+    viz_result, opt_result = await asyncio.gather(viz_task, opt_task)
+
+    log.info("visualize_and_optimize_complete")
+
+    base_msgs = state.get("messages", [])
+    base_count = len(base_msgs)
+    new_viz_msgs = viz_result.get("messages", [])[base_count:]
+    new_opt_msgs = opt_result.get("messages", [])[base_count:]
+
+    return {
+        **state,
+        "graph_data": viz_result.get("graph_data", {}),
+        "optimized_files": opt_result.get("optimized_files", {}),
+        "messages": base_msgs + new_viz_msgs + new_opt_msgs,
     }
 
 
@@ -80,6 +102,8 @@ def should_retry(state: AgentState) -> str:
         reason = "all benchmarks returned 0ms (likely sandbox failures), skipping retry"
     elif initial_total > 0 and final_total < initial_total:
         reason = f"improvement detected ({initial_total:.1f}ms -> {final_total:.1f}ms)"
+    elif initial_total > 0 and abs(final_total - initial_total) / initial_total < 0.05:
+        reason = f"marginal difference ({initial_total:.1f}ms -> {final_total:.1f}ms, <5%), not worth retrying"
     else:
         decision = "optimize"
         reason = f"no improvement ({initial_total:.1f}ms -> {final_total:.1f}ms), retrying"
@@ -111,10 +135,10 @@ def build_graph() -> StateGraph:
 
     graph.add_node("clone", clone_node)
     graph.add_node("parse_ast", parse_ast_node)
-    graph.add_node("analyze", analyze_node)
-    graph.add_node("generate_benchmarks", generate_benchmarks_node)
+    graph.add_node("triage", triage_node)
+    graph.add_node("chunk_analyze", chunk_analyze_node)
     graph.add_node("run_benchmarks", run_benchmarks_node)
-    graph.add_node("visualize", visualize_node)
+    graph.add_node("visualize_and_optimize", visualize_and_optimize_node)
     graph.add_node("optimize", optimize_node)
     graph.add_node("rerun_benchmarks", rerun_benchmarks_node)
     graph.add_node("report", report_node)
@@ -122,16 +146,16 @@ def build_graph() -> StateGraph:
 
     graph.set_entry_point("clone")
     graph.add_edge("clone", "parse_ast")
-    graph.add_edge("parse_ast", "analyze")
-    graph.add_edge("analyze", "generate_benchmarks")
-    graph.add_edge("generate_benchmarks", "run_benchmarks")
-    graph.add_edge("run_benchmarks", "visualize")
-    graph.add_edge("visualize", "optimize")
-    graph.add_edge("optimize", "rerun_benchmarks")
+    graph.add_edge("parse_ast", "triage")
+    graph.add_edge("triage", "chunk_analyze")
+    graph.add_edge("chunk_analyze", "run_benchmarks")
+    graph.add_edge("run_benchmarks", "visualize_and_optimize")
+    graph.add_edge("visualize_and_optimize", "rerun_benchmarks")
     graph.add_conditional_edges("rerun_benchmarks", should_retry, {
         "optimize": "optimize",
         "report": "report",
     })
+    graph.add_edge("optimize", "rerun_benchmarks")
     graph.add_edge("report", "cleanup")
     graph.add_edge("cleanup", END)
 

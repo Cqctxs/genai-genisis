@@ -4,7 +4,7 @@ import structlog
 
 from agent.schemas import GraphData
 from agent.state import AgentState
-from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
+from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
 log = structlog.get_logger()
 
@@ -34,7 +34,7 @@ async def visualize_node(state: AgentState) -> dict:
         benchmark_results=len(initial_results),
     )
 
-    agent = get_agent(GraphData, VISUALIZER_PROMPT, GEMINI_PRO)
+    agent = get_agent(GraphData, VISUALIZER_PROMPT, GEMINI_FLASH)
 
     prompt = f"""## AST Map
 ```json
