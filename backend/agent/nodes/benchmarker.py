@@ -12,22 +12,34 @@ log = structlog.get_logger()
 BENCHMARK_PROMPT = """You are a benchmarking expert. Given an analysis of performance bottlenecks
 in a codebase, generate profiling scripts that measure the execution time of each identified hotspot.
 
-IMPORTANT: Do NOT include any memory measurement code. No tracemalloc, no memory_profiler,
-no process.memoryUsage(). Memory is measured automatically by the runtime sandbox wrapper.
-Focus ONLY on timing.
+## Sandbox Environment
+
+The benchmark script runs inside an isolated sandbox where:
+- The repo's source files are available in the working directory (same layout as the repo).
+- The repo's dependencies from requirements.txt / package.json ARE already installed.
+- You MUST import from the repo normally (e.g. `from myapp.utils import process_data`).
+- Do NOT reimplement, inline, or stub out functions that exist in the repo.
+- Do NOT call pip install or npm install — dependencies are pre-installed.
+- If a function requires database connections, network I/O, or external services to run,
+  create minimal mock/stub data so the function's core logic can still execute.
+
+## Rules
+
+- Do NOT include any memory measurement code. No tracemalloc, no memory_profiler,
+  no process.memoryUsage(). Memory is measured automatically by the runtime wrapper.
+- Focus ONLY on timing.
 
 For Python: Use time.perf_counter() or timeit to measure execution time. Write scripts that
-import the target functions, set up minimal realistic test data, run multiple iterations, and
-output a single JSON object on the LAST line of stdout:
+import the target functions from the repo, set up minimal realistic test data, run multiple
+iterations, and output a single JSON object on the LAST line of stdout:
 {"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
 For JavaScript/TypeScript: Use require() (CommonJS) NOT import (ESM). The sandbox runs
 scripts with plain `node` in CommonJS mode. Use `const { performance } = require("perf_hooks")`
-for timing. Write scripts that require target functions, set up test data, run multiple
-iterations, and output a single JSON object on the LAST line of stdout:
+for timing. Write scripts that require target functions from the repo, set up test data,
+run multiple iterations, and output a single JSON object on the LAST line of stdout:
 {"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
-The script must be self-contained and runnable. Include all necessary requires and test data.
 Any debug/progress output must go to stderr or earlier stdout lines — the LAST line of stdout
 must be the JSON result object and nothing else."""
 

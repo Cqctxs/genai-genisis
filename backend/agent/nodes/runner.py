@@ -146,7 +146,19 @@ async def run_benchmarks_node(state: AgentState) -> dict:
         except Exception:
             pass
 
-    log.info("run_benchmarks_repo_files_loaded", count=len(repo_files))
+    for manifest in ("requirements.txt", "package.json"):
+        if manifest not in repo_files:
+            try:
+                repo_files[manifest] = read_file(repo_path, manifest)
+            except Exception:
+                pass
+
+    log.info(
+        "run_benchmarks_repo_files_loaded",
+        count=len(repo_files),
+        has_requirements_txt="requirements.txt" in repo_files,
+        has_package_json="package.json" in repo_files,
+    )
 
     # Run all benchmarks in parallel
     tasks = [
