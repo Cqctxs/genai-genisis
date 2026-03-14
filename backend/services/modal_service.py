@@ -38,28 +38,23 @@ python_image = (
 
 node_image = (
     modal.Image.debian_slim()
-    .apt_install("curl", "build-essential")
+    .apt_install("curl")
     .run_commands(
-        'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash',
-        'bash -c "source $HOME/.nvm/nvm.sh && nvm install --lts && nvm use --lts"',
-        'bash -c "source $HOME/.nvm/nvm.sh && npm install -g '
-        'lodash express react react-dom next '
-        'axios framer-motion zod '
-        'typescript ts-node '
-        'jest mocha chai '
-        'mongoose pg knex sequelize prisma '
-        'socket.io ws '
-        'jsonwebtoken bcrypt uuid '
-        'dayjs moment date-fns '
-        'cheerio node-fetch '
-        '@tanstack/react-query swr"',
-        # Symlink nvm-managed binaries into a standard PATH location so
-        # subprocess calls can find node/npm without sourcing nvm.sh.
-        'bash -c "source $HOME/.nvm/nvm.sh && '
-        'ln -sf $(which node) /usr/local/bin/node && '
-        'ln -sf $(which npm) /usr/local/bin/npm && '
-        'ln -sf $(which npx) /usr/local/bin/npx && '
-        'ln -sf $(npm root -g) /usr/local/lib/node_modules"',
+        "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash",
+        "bash -i -c 'nvm install --lts && nvm use --lts'",
+    )
+    .run_commands(
+        "bash -i -c 'npm install -g "
+        "lodash@latest express@latest react@latest react-dom@latest next@latest "
+        "axios@latest framer-motion@latest zod@latest "
+        "typescript@latest ts-node@latest "
+        "jest@latest mocha@latest chai@latest "
+        "mongoose@latest pg@latest knex@latest sequelize@latest prisma@latest "
+        "socket.io@latest ws@latest "
+        "jsonwebtoken@latest bcrypt@latest uuid@latest "
+        "dayjs@latest moment@latest date-fns@latest "
+        "cheerio@latest node-fetch@latest "
+        "@tanstack/react-query@latest swr@latest'"
     )
     .env({"NODE_PATH": "/usr/local/lib/node_modules"})
 )
