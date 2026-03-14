@@ -1,6 +1,8 @@
+import asyncio
 import json
 
 import structlog
+from pydantic import BaseModel
 
 from agent.schemas import CodeMarkScore, ComparisonReport, FunctionComparison
 from agent.state import AgentState
@@ -16,13 +18,8 @@ affected performance, and whether any time-space tradeoffs were made.
 
 Do NOT invent numbers — only reference the data provided. Be direct and factual."""
 
+SUMMARY_TIMEOUT_S = 30
 
-class _SummaryOutput:
-    """Minimal Pydantic-like wrapper so the structured-output agent can return plain text."""
-    pass
-
-
-from pydantic import BaseModel
 
 class SummaryText(BaseModel):
     summary: str
@@ -43,40 +40,12 @@ async def report_node(state: AgentState) -> dict:
         hotspots_count=len(hotspots),
     )
 
-    # --- Deterministic scoring ---
     score, function_comparisons = compute_benchy_score(
         initial_results, final_results, hotspots,
     )
 
-    # --- LLM-generated summary (qualitative only) ---
-    comparison_data = [fc.model_dump() for fc in function_comparisons]
     sandbox_specs = await get_sandbox_specs()
-
-    agent = get_agent(SummaryText, SUMMARY_PROMPT, GEMINI_FLASH)
-
-    prompt = f"""## Benchmark Comparison
-```json
-{json.dumps(comparison_data, indent=2)}
-```
-
-## Hotspots Addressed
-```json
-{json.dumps(hotspots, indent=2)[:4000]}
-```
-
-## Score
-Overall: {score.overall_before:.0f} → {score.overall_after:.0f}
-Time: {score.time_score:.0f} | Memory: {score.memory_score:.0f} | Complexity: {score.complexity_score:.0f}
-
-Write a concise summary of the optimizations and their impact."""
-
-    try:
-        result = await run_agent_logged(agent, prompt, node_name="report_summary")
-        summary_output: SummaryText = result.output  # type: ignore[assignment]
-        summary = summary_output.summary
-    except Exception as e:
-        log.warning("report_summary_llm_failed", error=str(e))
-        summary = _fallback_summary(function_comparisons, score)
+    summary = await _generate_summary(function_comparisons, hotspots, score)
 
     report = ComparisonReport(
         functions=function_comparisons,
@@ -114,21 +83,65 @@ Write a concise summary of the optimizations and their impact."""
     }
 
 
+async def _generate_summary(
+    comparisons: list[FunctionComparison],
+    hotspots: list[dict],
+    score: CodeMarkScore,
+) -> str:
+    """Try LLM summary with a hard timeout; fall back to template on any failure."""
+    comparison_data = [fc.model_dump() for fc in comparisons]
+
+    agent = get_agent(SummaryText, SUMMARY_PROMPT, GEMINI_FLASH)
+
+    prompt = f"""## Benchmark Comparison
+```json
+{json.dumps(comparison_data, indent=2)}
+```
+
+## Hotspots Addressed
+```json
+{json.dumps(hotspots, indent=2)[:4000]}
+```
+
+## Score
+Overall: {score.overall_before:.0f} → {score.overall_after:.0f}
+Time: {score.time_score:.0f} | Memory: {score.memory_score:.0f} | Complexity: {score.complexity_score:.0f}
+
+Write a concise summary of the optimizations and their impact."""
+
+    try:
+        result = await asyncio.wait_for(
+            run_agent_logged(agent, prompt, node_name="report_summary"),
+            timeout=SUMMARY_TIMEOUT_S,
+        )
+        summary_output: SummaryText = result.output  # type: ignore[assignment]
+        return summary_output.summary
+    except TimeoutError:
+        log.warning("report_summary_timeout", timeout_s=SUMMARY_TIMEOUT_S)
+    except Exception as e:
+        log.warning("report_summary_llm_failed", error=str(e))
+
+    return _fallback_summary(comparisons, score)
+
+
 def _fallback_summary(
     comparisons: list[FunctionComparison],
     score: CodeMarkScore,
 ) -> str:
-    """Generate a template-based summary when the LLM call fails."""
+    """Template-based summary used when the LLM call fails or times out."""
     if not comparisons:
         return "No benchmark comparisons available."
 
     improved = [c for c in comparisons if c.speedup_factor > 1.05]
     tradeoffs = [c for c in comparisons if c.speedup_factor > 1.05 and c.memory_reduction_pct < -5]
+    fn_names = ", ".join(c.function_name for c in comparisons)
 
-    parts = [f"Analysed {len(comparisons)} function(s)."]
+    parts = [f"Analysed {len(comparisons)} function(s): {fn_names}."]
     if improved:
         avg_speedup = sum(c.speedup_factor for c in improved) / len(improved)
-        parts.append(f"{len(improved)} showed improvement (avg {avg_speedup:.1f}x speedup).")
+        parts.append(f"{len(improved)} showed measurable improvement (avg {avg_speedup:.1f}x speedup).")
+    else:
+        parts.append("Benchmark times were within noise margins on the sandbox's input sizes.")
     if tradeoffs:
         parts.append(f"{len(tradeoffs)} used a time-space tradeoff (faster execution, higher memory).")
     parts.append(f"Overall CodeMark score: {score.overall_before:.0f} → {score.overall_after:.0f}.")
