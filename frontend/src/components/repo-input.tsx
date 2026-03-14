@@ -45,9 +45,16 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 type Mode = "browse" | "url";
+type OptimizationBias = "speed" | "balanced" | "memory";
+
+const BIAS_OPTIONS: { value: OptimizationBias; label: string; description: string }[] = [
+  { value: "speed", label: "Speed", description: "Maximize execution speed" },
+  { value: "balanced", label: "Balanced", description: "Balance speed and memory" },
+  { value: "memory", label: "Memory", description: "Minimize memory usage" },
+];
 
 interface RepoInputProps {
-  onAnalyze: (repoUrl: string) => void;
+  onAnalyze: (repoUrl: string, optimizationBias: string) => void;
   isLoading: boolean;
   accessToken: string | null;
 }
@@ -62,6 +69,7 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
 
   const [url, setUrl] = useState("");
   const [urlError, setUrlError] = useState("");
+  const [optimizationBias, setOptimizationBias] = useState<OptimizationBias>("balanced");
 
   useEffect(() => {
     if (!accessToken || fetchState !== "idle") return;
@@ -91,7 +99,7 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
 
   const handleBrowseAnalyze = () => {
     if (!selectedRepo) return;
-    onAnalyze(selectedRepo.html_url);
+    onAnalyze(selectedRepo.html_url, optimizationBias);
   };
 
   const handleUrlSubmit = (e: React.FormEvent) => {
@@ -102,7 +110,7 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
       return;
     }
     setUrlError("");
-    onAnalyze(trimmed);
+    onAnalyze(trimmed, optimizationBias);
   };
 
   return (
@@ -131,6 +139,32 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
           >
             Enter URL
           </button>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-mono text-light/50 uppercase tracking-wider">
+            Optimization Priority
+          </label>
+          <div className="flex items-center gap-1 bg-dark rounded-lg p-1 w-fit">
+            {BIAS_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                disabled={isLoading}
+                onClick={() => setOptimizationBias(opt.value)}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  optimizationBias === opt.value
+                    ? "bg-light/15 text-light"
+                    : "text-light/40 hover:text-light/70"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-light/30">
+            {BIAS_OPTIONS.find((o) => o.value === optimizationBias)?.description}
+          </p>
         </div>
 
         {mode === "browse" && (

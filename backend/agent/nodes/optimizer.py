@@ -33,6 +33,25 @@ Optimization strategies to consider:
 
 Be precise: only modify code that actually impacts performance. Preserve correctness."""
 
+BIAS_INSTRUCTIONS: dict[str, str] = {
+    "speed": (
+        "CRITICAL PRIORITY: Maximize execution speed above all else. "
+        "It is acceptable to use more memory (caching, memoization, precomputation, "
+        "lookup tables) if it results in faster execution. Prefer O(1) lookups over "
+        "O(n) scans, even at the cost of higher memory footprint."
+    ),
+    "memory": (
+        "CRITICAL PRIORITY: Minimize memory usage above all else. "
+        "Prefer streaming/iterative approaches over buffering, generators over lists, "
+        "in-place mutations over copies, and compact data structures. Accept slightly "
+        "slower execution if it meaningfully reduces peak memory."
+    ),
+    "balanced": (
+        "PRIORITY: Balance execution speed and memory usage. "
+        "Optimize for the best overall efficiency without heavily sacrificing one metric for the other."
+    ),
+}
+
 
 async def _optimize_file(
     file_path: str,
@@ -40,6 +59,7 @@ async def _optimize_file(
     hotspots: list[Hotspot],
     benchmark_results: list[dict],
     correctness_failures: list[dict] | None = None,
+    bias_instruction: str = "",
 ) -> tuple[str, list[OptimizationChange], str]:
     """Optimize a single file's hotspots. Returns (file_path, changes, optimized_content).
 
@@ -97,6 +117,9 @@ Rules:
 {file_content[:8000]}
 ```
 
+## Optimization Objective
+{bias_instruction if bias_instruction else BIAS_INSTRUCTIONS["balanced"]}
+
 Optimize the bottleneck functions in this file."""
 
     try:
@@ -128,6 +151,8 @@ async def optimize_node(state: AgentState) -> dict:
     initial_results = state.get("initial_results", [])
     repo_path = state.get("repo_path", "")
     correctness_failures = state.get("correctness_failures", [])
+    optimization_bias = state.get("optimization_bias", "balanced")
+    bias_instruction = BIAS_INSTRUCTIONS.get(optimization_bias, BIAS_INSTRUCTIONS["balanced"])
 
     file_hotspots: dict[str, list[Hotspot]] = {}
     for hotspot in analysis.hotspots:
@@ -162,6 +187,7 @@ async def optimize_node(state: AgentState) -> dict:
         _optimize_file(
             file_path, content, file_hotspots[file_path], initial_results,
             correctness_failures=correctness_failures,
+            bias_instruction=bias_instruction,
         )
         for file_path, content in affected_files.items()
     ]

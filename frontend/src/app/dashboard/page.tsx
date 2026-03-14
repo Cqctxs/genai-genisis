@@ -60,7 +60,7 @@ export default function DashboardPage() {
   };
 
   const handleAnalyze = useCallback(
-    async (repoUrl: string) => {
+    async (repoUrl: string, optimizationBias: string = "balanced") => {
       const token = (session as any)?.accessToken;
       if (!token) {
         toast.error("GitHub token not available. Please sign in again.");
@@ -72,7 +72,7 @@ export default function DashboardPage() {
       setResults(null);
 
       try {
-        const { job_id } = await startAnalysis(repoUrl, token);
+        const { job_id } = await startAnalysis(repoUrl, token, optimizationBias);
         setJobId(job_id);
 
         streamJob(

@@ -278,14 +278,16 @@ async def run_optimization_pipeline(
     repo_url: str,
     github_token: str,
     queue: asyncio.Queue | None = None,
+    optimization_bias: str = "balanced",
 ) -> dict:
     """Run the full optimization pipeline and stream updates."""
-    log.info("pipeline_start", repo_url=repo_url)
+    log.info("pipeline_start", repo_url=repo_url, optimization_bias=optimization_bias)
     pipeline_start = time.monotonic()
 
     initial_state: AgentState = {
         "repo_url": repo_url,
         "github_token": github_token,
+        "optimization_bias": optimization_bias,
         "messages": [],
     }
 
