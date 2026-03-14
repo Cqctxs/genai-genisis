@@ -38,7 +38,27 @@ python_image = (
 
 node_image = (
     modal.Image.debian_slim()
-    .apt_install("curl", "build-essential")
+    .apt_install("curl", "build-essential", "git")
+    .run_commands(
+        # Install nvm and latest Node.js, then create symlinks in /usr/bin
+        """bash -c '
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+        export NVM_DIR="/root/.nvm"
+        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+        nvm install --lts
+        nvm use --lts
+        # Get the installed node version path
+        NODE_VERSION=$(node -v | cut -c2-)
+        NODE_DIR="$NVM_DIR/versions/node/v${NODE_VERSION}"
+        # Create symlinks in standard system paths
+        ln -sf "$NODE_DIR/bin/node" /usr/bin/node
+        ln -sf "$NODE_DIR/bin/npm" /usr/bin/npm
+        ln -sf "$NODE_DIR/bin/npx" /usr/bin/npx
+        # Verify
+        node --version
+        npm --version
+        '"""
+    )
     .run_commands(
         'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash',
         'bash -c "source $HOME/.nvm/nvm.sh && nvm install --lts && nvm use --lts"',

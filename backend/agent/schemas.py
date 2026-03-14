@@ -110,8 +110,6 @@ class GraphNode(BaseModel):
     avg_time_ms: float | None = None
     memory_mb: float | None = None
     severity: str | None = None
-    position_x: float = 0
-    position_y: float = 0
 
 
 class GraphEdge(BaseModel):

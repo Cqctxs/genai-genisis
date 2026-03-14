@@ -14,9 +14,10 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import Dagre from "@dagrejs/dagre";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { GraphData, GraphNode as GraphNodeData, NodeType } from "@/lib/api";
+import type { GraphData, GraphNode as GraphNodeData, NodeType, EdgeType } from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -75,6 +76,115 @@ const EDGE_TYPE_COLORS: Record<string, string> = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Dagre auto-layout                                                  */
+/* ------------------------------------------------------------------ */
+
+const NODE_WIDTH = 240;
+const BASE_NODE_HEIGHT = 100;
+const KV_ROW_HEIGHT = 14;
+
+function estimateNodeHeight(node: GraphNodeData): number {
+  let h = BASE_NODE_HEIGHT;
+  const inputCount = node.inputs ? Object.keys(node.inputs).length : 0;
+  const outputCount = node.outputs ? Object.keys(node.outputs).length : 0;
+  h += (inputCount + outputCount) * KV_ROW_HEIGHT;
+  if (node.metadata && Object.keys(node.metadata).length > 0) h += 20;
+  if (node.avg_time_ms != null || node.memory_mb != null) h += 18;
+  return h;
+}
+
+function getLayoutedElements(
+  graphData: GraphData,
+): { nodes: Node[]; edges: Edge[] } {
+  const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 100, marginx: 40, marginy: 40 });
+
+  for (const n of graphData.nodes) {
+    g.setNode(n.id, { width: NODE_WIDTH, height: estimateNodeHeight(n) });
+  }
+
+  for (const e of graphData.edges) {
+    if (e.edge_type !== "loop_back") {
+      g.setEdge(e.source, e.target);
+    }
+  }
+
+  Dagre.layout(g);
+
+  const centerY = new Map<string, number>();
+  for (const n of graphData.nodes) {
+    centerY.set(n.id, g.node(n.id).y);
+  }
+
+  const nodes: Node[] = graphData.nodes.map((n) => {
+    const pos = g.node(n.id);
+    return {
+      id: n.id,
+      type: n.node_type || "function",
+      position: {
+        x: pos.x - NODE_WIDTH / 2,
+        y: pos.y - estimateNodeHeight(n) / 2,
+      },
+      data: { graphNode: n },
+    };
+  });
+
+  const edges: Edge[] = graphData.edges.map((e, i) => {
+    const edgeType: EdgeType = e.edge_type || "call";
+    const isLoopBack = edgeType === "loop_back";
+    const isBranch = edgeType === "branch_true" || edgeType === "branch_false";
+    const strokeColor = EDGE_TYPE_COLORS[edgeType] || EDGE_TYPE_COLORS.call;
+
+    let sourceHandle: string | undefined;
+    let targetHandle: string | undefined;
+
+    if (isLoopBack) {
+      sourceHandle = "loop_source";
+      targetHandle = "loop_target";
+    } else if (isBranch) {
+      const srcY = centerY.get(e.source) ?? 0;
+      const tgtY = centerY.get(e.target) ?? 0;
+      sourceHandle = tgtY <= srcY ? "branch_top" : "branch_bottom";
+    }
+
+    return {
+      id: `e-${i}`,
+      source: e.source,
+      target: e.target,
+      sourceHandle,
+      targetHandle,
+      label: e.label || undefined,
+      type: "bezier",
+      animated: isLoopBack,
+      style: {
+        stroke: strokeColor,
+        strokeWidth: isLoopBack ? 2 : 1.5,
+        strokeDasharray: isLoopBack ? "6 3" : undefined,
+      },
+      labelStyle: {
+        fill: strokeColor,
+        fontSize: 10,
+        fontWeight: 500,
+      },
+      labelBgStyle: {
+        fill: "var(--color-dark)",
+        fillOpacity: 0.85,
+      },
+      labelBgPadding: [6, 3] as [number, number],
+      labelBgBorderRadius: 4,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: strokeColor,
+        width: 16,
+        height: 16,
+      },
+    };
+  });
+
+  return { nodes, edges };
+}
+
+/* ------------------------------------------------------------------ */
 /*  Shared node internals                                              */
 /* ------------------------------------------------------------------ */
 
@@ -122,7 +232,8 @@ function NodeShell({
 
   return (
     <>
-      <Handle type="target" position={Position.Top} className="!bg-light/30 !w-2 !h-2 !border-0" />
+      <Handle type="target" position={Position.Left} className="!bg-light/30 !w-2 !h-2 !border-0" />
+      <Handle type="target" position={Position.Top} id="loop_target" className="!bg-accent-blue/50 !w-1.5 !h-1.5 !border-0" />
       <div
         className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px]"
         style={{
@@ -151,7 +262,8 @@ function NodeShell({
           <NodeMetrics node={node} />
         </div>
       </div>
-      <Handle type="source" position={Position.Bottom} className="!bg-light/30 !w-2 !h-2 !border-0" />
+      <Handle type="source" position={Position.Right} className="!bg-light/30 !w-2 !h-2 !border-0" />
+      <Handle type="source" position={Position.Top} id="loop_source" className="!bg-accent-blue/50 !w-1.5 !h-1.5 !border-0" style={{ left: "75%" }} />
     </>
   );
 }
@@ -237,7 +349,8 @@ const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
   const node = (data as unknown as SemanticNodeData).graphNode;
   return (
     <>
-      <Handle type="target" position={Position.Top} className="!bg-light/30 !w-2 !h-2 !border-0" />
+      <Handle type="target" position={Position.Left} className="!bg-light/30 !w-2 !h-2 !border-0" />
+      <Handle type="target" position={Position.Top} id="loop_target" className="!bg-accent-blue/50 !w-1.5 !h-1.5 !border-0" style={{ left: "25%" }} />
       <div
         className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px]"
         style={{
@@ -268,24 +381,31 @@ const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
           <NodeMetrics node={node} />
         </div>
       </div>
-      {/* Branch handles: left = false, right = true, bottom = default */}
+      {/* Branch handles: position-based — layout picks top/bottom dynamically */}
       <Handle
         type="source"
-        position={Position.Bottom}
+        position={Position.Right}
         id="default"
         className="!bg-light/30 !w-2 !h-2 !border-0"
       />
       <Handle
         type="source"
-        position={Position.Left}
-        id="branch_false"
-        className="!bg-accent-red !w-2 !h-2 !border-0"
+        position={Position.Top}
+        id="branch_top"
+        className="!bg-light/30 !w-2 !h-2 !border-0"
       />
       <Handle
         type="source"
-        position={Position.Right}
-        id="branch_true"
-        className="!bg-accent-green !w-2 !h-2 !border-0"
+        position={Position.Bottom}
+        id="branch_bottom"
+        className="!bg-light/30 !w-2 !h-2 !border-0"
+      />
+      <Handle
+        type="source"
+        position={Position.Top}
+        id="loop_source"
+        className="!bg-accent-blue/50 !w-1.5 !h-1.5 !border-0"
+        style={{ left: "80%" }}
       />
     </>
   );
@@ -336,62 +456,9 @@ interface PerformanceGraphProps {
 }
 
 export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
-  const nodes: Node[] = useMemo(() => {
-    if (!graphData) return [];
-    return graphData.nodes.map((n) => ({
-      id: n.id,
-      type: n.node_type || "function",
-      position: { x: n.position_x, y: n.position_y },
-      data: { graphNode: n },
-    }));
-  }, [graphData]);
-
-  const edges: Edge[] = useMemo(() => {
-    if (!graphData) return [];
-    return graphData.edges.map((e, i) => {
-      const edgeType = e.edge_type || "call";
-      const isLoopBack = edgeType === "loop_back";
-      const strokeColor = EDGE_TYPE_COLORS[edgeType] || EDGE_TYPE_COLORS.call;
-
-      const sourceHandle =
-        edgeType === "branch_true"
-          ? "branch_true"
-          : edgeType === "branch_false"
-            ? "branch_false"
-            : undefined;
-
-      return {
-        id: `e-${i}`,
-        source: e.source,
-        target: e.target,
-        sourceHandle,
-        label: e.label || undefined,
-        type: "smoothstep",
-        animated: isLoopBack,
-        style: {
-          stroke: strokeColor,
-          strokeWidth: isLoopBack ? 2 : 1.5,
-          strokeDasharray: isLoopBack ? "6 3" : undefined,
-        },
-        labelStyle: {
-          fill: strokeColor,
-          fontSize: 10,
-          fontWeight: 500,
-        },
-        labelBgStyle: {
-          fill: "var(--color-dark)",
-          fillOpacity: 0.85,
-        },
-        labelBgPadding: [6, 3] as [number, number],
-        labelBgBorderRadius: 4,
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: strokeColor,
-          width: 16,
-          height: 16,
-        },
-      };
-    });
+  const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
+    if (!graphData) return { nodes: [], edges: [] };
+    return getLayoutedElements(graphData);
   }, [graphData]);
 
   if (!graphData) {
