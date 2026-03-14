@@ -270,10 +270,10 @@ function NodeMetrics({ node }: { node: GraphNodeData }) {
   return (
     <div className="flex items-center gap-2 text-[10px] pt-1 border-t border-white/5">
       {node.avg_time_ms != null && (
-        <span className="opacity-50"><Gauge />{node.avg_time_ms.toFixed(1)}ms</span>
+        <span className="flex items-center gap-0.5 opacity-50"><Gauge className="w-3 h-3" />{node.avg_time_ms.toFixed(1)}ms</span>
       )}
       {node.memory_mb != null && (
-        <span className="opacity-50"><Save />{node.memory_mb.toFixed(1)}MB</span>
+        <span className="flex items-center gap-0.5 opacity-50"><Save className="w-3 h-3" />{node.memory_mb.toFixed(1)}MB</span>
       )}
     </div>
   );
@@ -358,8 +358,12 @@ const ApiNode = memo(function ApiNode({ data }: NodeProps) {
           )}
         </div>
       )}
-      {node.inputs && <KeyValueRows data={node.inputs} />}
-      {node.outputs && <KeyValueRows data={node.outputs} />}
+      {(node.inputs || node.outputs) && (
+        <div className="px-2 py-1 rounded bg-light/5 font-mono space-y-0.5">
+          {node.inputs && <KeyValueRows data={node.inputs} />}
+          {node.outputs && <KeyValueRows data={node.outputs} />}
+        </div>
+      )}
     </NodeShell>
   );
 });
@@ -383,8 +387,12 @@ const LlmNode = memo(function LlmNode({ data }: NodeProps) {
           )}
         </div>
       )}
-      {node.inputs && <KeyValueRows data={node.inputs} />}
-      {node.outputs && <KeyValueRows data={node.outputs} />}
+      {(node.inputs || node.outputs) && (
+        <div className="px-2 py-1 rounded bg-light/5 font-mono space-y-0.5">
+          {node.inputs && <KeyValueRows data={node.inputs} />}
+          {node.outputs && <KeyValueRows data={node.outputs} />}
+        </div>
+      )}
     </NodeShell>
   );
 });
@@ -407,8 +415,12 @@ const DbNode = memo(function DbNode({ data }: NodeProps) {
           )}
         </div>
       )}
-      {node.inputs && <KeyValueRows data={node.inputs} />}
-      {node.outputs && <KeyValueRows data={node.outputs} />}
+      {(node.inputs || node.outputs) && (
+        <div className="px-2 py-1 rounded bg-light/5 font-mono space-y-0.5">
+          {node.inputs && <KeyValueRows data={node.inputs} />}
+          {node.outputs && <KeyValueRows data={node.outputs} />}
+        </div>
+      )}
     </NodeShell>
   );
 });
@@ -506,7 +518,9 @@ const FunctionNode = memo(function FunctionNode({ data }: NodeProps) {
           <div className="text-[9px] uppercase tracking-wider opacity-30 mb-0.5">
             Inputs
           </div>
-          <KeyValueRows data={node.inputs} />
+          <div className="px-2 py-1 rounded bg-light/5 font-mono">
+            <KeyValueRows data={node.inputs} />
+          </div>
         </div>
       )}
       {node.outputs && (
@@ -514,7 +528,9 @@ const FunctionNode = memo(function FunctionNode({ data }: NodeProps) {
           <div className="text-[9px] uppercase tracking-wider opacity-30 mb-0.5">
             Outputs
           </div>
-          <KeyValueRows data={node.outputs} />
+          <div className="px-2 py-1 rounded bg-light/5 font-mono">
+            <KeyValueRows data={node.outputs} />
+          </div>
         </div>
       )}
     </NodeShell>
