@@ -1,22 +1,26 @@
 "use client";
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
+  Handle,
+  Position,
+  MarkerType,
   type Node,
   type Edge,
+  type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { GraphData } from "@/lib/api";
+import type { GraphData, GraphNode as GraphNodeData, NodeType } from "@/lib/api";
 
-interface PerformanceGraphProps {
-  graphData: GraphData | null;
-}
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "var(--color-accent-red)",
@@ -32,48 +36,362 @@ const SEVERITY_LABELS: { key: string; cls: string }[] = [
   { key: "low", cls: "bg-accent-green" },
 ];
 
+const NODE_TYPE_CONFIG: Record<
+  NodeType,
+  { icon: string; accent: string; label: string }
+> = {
+  api: {
+    icon: "🌐",
+    accent: "var(--color-accent-blue)",
+    label: "API Request",
+  },
+  llm: {
+    icon: "🧠",
+    accent: "var(--color-accent-purple)",
+    label: "LLM Call",
+  },
+  db: {
+    icon: "🗄️",
+    accent: "var(--color-accent-orange)",
+    label: "Database",
+  },
+  condition: {
+    icon: "🔀",
+    accent: "var(--color-accent-red)",
+    label: "Condition",
+  },
+  function: {
+    icon: "ƒ",
+    accent: "var(--color-accent-green)",
+    label: "Function",
+  },
+};
+
+const EDGE_TYPE_COLORS: Record<string, string> = {
+  call: "rgba(245, 240, 232, 0.25)",
+  branch_true: "var(--color-accent-green)",
+  branch_false: "var(--color-accent-red)",
+  loop_back: "var(--color-accent-blue)",
+};
+
+/* ------------------------------------------------------------------ */
+/*  Shared node internals                                              */
+/* ------------------------------------------------------------------ */
+
+interface SemanticNodeData extends Record<string, unknown> {
+  graphNode: GraphNodeData;
+}
+
+function KeyValueRows({ data }: { data: Record<string, string> }) {
+  return (
+    <div className="space-y-0.5">
+      {Object.entries(data).map(([k, v]) => (
+        <div key={k} className="flex items-baseline gap-1.5 text-[10px]">
+          <span className="opacity-40 shrink-0">{k}</span>
+          <span className="opacity-70 truncate">{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NodeMetrics({ node }: { node: GraphNodeData }) {
+  if (node.avg_time_ms == null && node.memory_mb == null) return null;
+  return (
+    <div className="flex items-center gap-2 text-[10px] pt-1 border-t border-white/5">
+      {node.avg_time_ms != null && (
+        <span className="opacity-50">⏱ {node.avg_time_ms.toFixed(1)}ms</span>
+      )}
+      {node.memory_mb != null && (
+        <span className="opacity-50">💾 {node.memory_mb.toFixed(1)}MB</span>
+      )}
+    </div>
+  );
+}
+
+function NodeShell({
+  node,
+  children,
+}: {
+  node: GraphNodeData;
+  children?: React.ReactNode;
+}) {
+  const config = NODE_TYPE_CONFIG[node.node_type] ?? NODE_TYPE_CONFIG.function;
+  const severityColor =
+    SEVERITY_COLORS[node.severity || "low"] || "rgba(245,240,232,0.15)";
+
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="!bg-light/30 !w-2 !h-2 !border-0" />
+      <div
+        className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px]"
+        style={{
+          background: "var(--color-dark)",
+          border: `2px solid ${severityColor}`,
+        }}
+      >
+        {/* Accent bar + header */}
+        <div
+          className="flex items-center gap-2 px-3 py-2"
+          style={{ borderBottom: `1px solid ${config.accent}33` }}
+        >
+          <span className="text-sm">{config.icon}</span>
+          <div className="min-w-0">
+            <div className="text-[9px] uppercase tracking-wider opacity-40">
+              {config.label}
+            </div>
+            <div className="text-xs font-semibold truncate">{node.label}</div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="px-3 py-2 space-y-1.5">
+          <div className="text-[10px] opacity-30 truncate">{node.file}</div>
+          {children}
+          <NodeMetrics node={node} />
+        </div>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-light/30 !w-2 !h-2 !border-0" />
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Custom node components                                             */
+/* ------------------------------------------------------------------ */
+
+const ApiNode = memo(function ApiNode({ data }: NodeProps) {
+  const node = (data as unknown as SemanticNodeData).graphNode;
+  return (
+    <NodeShell node={node}>
+      {node.metadata && (
+        <div className="flex items-center gap-1.5 text-[10px]">
+          {node.metadata.method && (
+            <span className="px-1.5 py-0.5 rounded bg-accent-blue/20 text-accent-blue font-mono font-semibold">
+              {node.metadata.method}
+            </span>
+          )}
+          {node.metadata.endpoint && (
+            <span className="opacity-60 truncate font-mono">
+              {node.metadata.endpoint}
+            </span>
+          )}
+        </div>
+      )}
+      {node.inputs && <KeyValueRows data={node.inputs} />}
+      {node.outputs && <KeyValueRows data={node.outputs} />}
+    </NodeShell>
+  );
+});
+
+const LlmNode = memo(function LlmNode({ data }: NodeProps) {
+  const node = (data as unknown as SemanticNodeData).graphNode;
+  return (
+    <NodeShell node={node}>
+      {node.metadata && (
+        <div className="space-y-0.5 text-[10px]">
+          {node.metadata.model && (
+            <div className="flex items-center gap-1.5">
+              <span className="opacity-40">model</span>
+              <span className="opacity-70 font-mono truncate">
+                {node.metadata.model}
+              </span>
+            </div>
+          )}
+          {node.metadata.purpose && (
+            <div className="opacity-50 italic">{node.metadata.purpose}</div>
+          )}
+        </div>
+      )}
+      {node.inputs && <KeyValueRows data={node.inputs} />}
+      {node.outputs && <KeyValueRows data={node.outputs} />}
+    </NodeShell>
+  );
+});
+
+const DbNode = memo(function DbNode({ data }: NodeProps) {
+  const node = (data as unknown as SemanticNodeData).graphNode;
+  return (
+    <NodeShell node={node}>
+      {node.metadata && (
+        <div className="flex items-center gap-1.5 text-[10px]">
+          {node.metadata.operation && (
+            <span className="px-1.5 py-0.5 rounded bg-accent-orange/20 text-accent-orange font-mono font-semibold">
+              {node.metadata.operation}
+            </span>
+          )}
+          {node.metadata.table && (
+            <span className="opacity-60 font-mono truncate">
+              {node.metadata.table}
+            </span>
+          )}
+        </div>
+      )}
+      {node.inputs && <KeyValueRows data={node.inputs} />}
+      {node.outputs && <KeyValueRows data={node.outputs} />}
+    </NodeShell>
+  );
+});
+
+const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
+  const node = (data as unknown as SemanticNodeData).graphNode;
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="!bg-light/30 !w-2 !h-2 !border-0" />
+      <div
+        className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px]"
+        style={{
+          background: "var(--color-dark)",
+          border: `2px solid ${SEVERITY_COLORS[node.severity || "low"] || "rgba(245,240,232,0.15)"}`,
+          borderLeft: `4px solid var(--color-accent-red)`,
+        }}
+      >
+        <div
+          className="flex items-center gap-2 px-3 py-2"
+          style={{ borderBottom: "1px solid rgba(245,240,232,0.06)" }}
+        >
+          <span className="text-sm">🔀</span>
+          <div className="min-w-0">
+            <div className="text-[9px] uppercase tracking-wider opacity-40">
+              Condition
+            </div>
+            <div className="text-xs font-semibold truncate">{node.label}</div>
+          </div>
+        </div>
+        <div className="px-3 py-2 space-y-1.5">
+          <div className="text-[10px] opacity-30 truncate">{node.file}</div>
+          {node.metadata?.condition && (
+            <div className="text-[10px] px-2 py-1 rounded bg-accent-red/10 text-accent-red/80 font-mono">
+              {node.metadata.condition}
+            </div>
+          )}
+          <NodeMetrics node={node} />
+        </div>
+      </div>
+      {/* Branch handles: left = false, right = true, bottom = default */}
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="default"
+        className="!bg-light/30 !w-2 !h-2 !border-0"
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="branch_false"
+        className="!bg-accent-red !w-2 !h-2 !border-0"
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="branch_true"
+        className="!bg-accent-green !w-2 !h-2 !border-0"
+      />
+    </>
+  );
+});
+
+const FunctionNode = memo(function FunctionNode({ data }: NodeProps) {
+  const node = (data as unknown as SemanticNodeData).graphNode;
+  return (
+    <NodeShell node={node}>
+      {node.inputs && (
+        <div>
+          <div className="text-[9px] uppercase tracking-wider opacity-30 mb-0.5">
+            Inputs
+          </div>
+          <KeyValueRows data={node.inputs} />
+        </div>
+      )}
+      {node.outputs && (
+        <div>
+          <div className="text-[9px] uppercase tracking-wider opacity-30 mb-0.5">
+            Outputs
+          </div>
+          <KeyValueRows data={node.outputs} />
+        </div>
+      )}
+    </NodeShell>
+  );
+});
+
+/* ------------------------------------------------------------------ */
+/*  Node type registry                                                 */
+/* ------------------------------------------------------------------ */
+
+const nodeTypes = {
+  api: ApiNode,
+  llm: LlmNode,
+  db: DbNode,
+  condition: ConditionNode,
+  function: FunctionNode,
+};
+
+/* ------------------------------------------------------------------ */
+/*  Main component                                                     */
+/* ------------------------------------------------------------------ */
+
+interface PerformanceGraphProps {
+  graphData: GraphData | null;
+}
+
 export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
   const nodes: Node[] = useMemo(() => {
     if (!graphData) return [];
     return graphData.nodes.map((n) => ({
       id: n.id,
+      type: n.node_type || "function",
       position: { x: n.position_x, y: n.position_y },
-      data: {
-        label: (
-          <div className="text-xs space-y-1">
-            <div className="font-semibold">{n.label}</div>
-            <div className="text-[10px] opacity-50">{n.file}</div>
-            {n.avg_time_ms != null && (
-              <div className="text-[10px]">{n.avg_time_ms.toFixed(1)}ms</div>
-            )}
-            {n.memory_mb != null && (
-              <div className="text-[10px]">{n.memory_mb.toFixed(1)}MB</div>
-            )}
-          </div>
-        ),
-      },
-      style: {
-        background: "var(--color-dark)",
-        border: `2px solid ${SEVERITY_COLORS[n.severity || "low"] || "rgba(245,240,232,0.15)"}`,
-        borderRadius: "8px",
-        padding: "12px",
-        color: "var(--color-light)",
-        minWidth: "140px",
-      },
+      data: { graphNode: n },
     }));
   }, [graphData]);
 
   const edges: Edge[] = useMemo(() => {
     if (!graphData) return [];
-    return graphData.edges.map((e, i) => ({
-      id: `e-${i}`,
-      source: e.source,
-      target: e.target,
-      label: e.label,
-      style: { stroke: "rgba(245, 240, 232, 0.2)" },
-      labelStyle: { fill: "rgba(245, 240, 232, 0.5)", fontSize: 10 },
-      animated: true,
-    }));
+    return graphData.edges.map((e, i) => {
+      const edgeType = e.edge_type || "call";
+      const isLoopBack = edgeType === "loop_back";
+      const strokeColor = EDGE_TYPE_COLORS[edgeType] || EDGE_TYPE_COLORS.call;
+
+      const sourceHandle =
+        edgeType === "branch_true"
+          ? "branch_true"
+          : edgeType === "branch_false"
+            ? "branch_false"
+            : undefined;
+
+      return {
+        id: `e-${i}`,
+        source: e.source,
+        target: e.target,
+        sourceHandle,
+        label: e.label || undefined,
+        type: "smoothstep",
+        animated: isLoopBack,
+        style: {
+          stroke: strokeColor,
+          strokeWidth: isLoopBack ? 2 : 1.5,
+          strokeDasharray: isLoopBack ? "6 3" : undefined,
+        },
+        labelStyle: {
+          fill: strokeColor,
+          fontSize: 10,
+          fontWeight: 500,
+        },
+        labelBgStyle: {
+          fill: "var(--color-dark)",
+          fillOpacity: 0.85,
+        },
+        labelBgPadding: [6, 3] as [number, number],
+        labelBgBorderRadius: 4,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: strokeColor,
+          width: 16,
+          height: 16,
+        },
+      };
+    });
   }, [graphData]);
 
   if (!graphData) {
@@ -113,6 +431,7 @@ export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            nodeTypes={nodeTypes}
             fitView
             proOptions={{ hideAttribution: true }}
           >
@@ -120,10 +439,9 @@ export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
             <Controls />
             <MiniMap
               nodeColor={(n) => {
-                const severity = graphData.nodes.find(
-                  (gn) => gn.id === n.id
-                )?.severity;
-                return SEVERITY_COLORS[severity || "low"] || "rgba(245,240,232,0.15)";
+                const gn = graphData.nodes.find((gn) => gn.id === n.id);
+                const nodeType = gn?.node_type || "function";
+                return NODE_TYPE_CONFIG[nodeType]?.accent || "rgba(245,240,232,0.15)";
               }}
             />
           </ReactFlow>

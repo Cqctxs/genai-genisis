@@ -53,18 +53,84 @@ BIAS_INSTRUCTIONS: dict[str, str] = {
 }
 
 
+def _build_regression_section(
+    file_path: str,
+    initial_results: list[dict],
+    previous_results: list[dict],
+) -> str:
+    """Build a prompt section describing performance regressions from a prior attempt.
+
+    Compares initial (baseline) results against the most recent post-optimization
+    results for functions in this file. Only emits warnings for functions that
+    got slower or used more memory.
+    """
+    initial_by_fn: dict[str, dict] = {}
+    for r in initial_results:
+        if r.get("file") == file_path and r.get("function_name"):
+            initial_by_fn[r["function_name"]] = r
+
+    regressions: list[str] = []
+    for r in previous_results:
+        if r.get("file") != file_path:
+            continue
+        fn = r.get("function_name", "")
+        baseline = initial_by_fn.get(fn)
+        if not baseline:
+            continue
+
+        old_time = baseline.get("avg_time_ms", 0)
+        new_time = r.get("avg_time_ms", 0)
+        old_mem = baseline.get("memory_peak_mb", 0)
+        new_mem = r.get("memory_peak_mb", 0)
+
+        parts: list[str] = []
+        if old_time > 0 and new_time >= old_time:
+            pct = ((new_time - old_time) / old_time) * 100
+            parts.append(f"time {old_time:.2f}ms -> {new_time:.2f}ms (+{pct:.1f}%)")
+        if old_mem > 0 and new_mem > old_mem:
+            pct = ((new_mem - old_mem) / old_mem) * 100
+            parts.append(f"memory {old_mem:.2f}MB -> {new_mem:.2f}MB (+{pct:.1f}%)")
+
+        if parts:
+            regressions.append(f"- `{fn}`: {', '.join(parts)}")
+
+    if not regressions:
+        return ""
+
+    return f"""
+## PERFORMANCE REGRESSION (CRITICAL — previous attempt made things WORSE)
+
+Your previous optimization attempt caused regressions on the following function(s):
+
+{chr(10).join(regressions)}
+
+You MUST use a COMPLETELY DIFFERENT optimization strategy this time.
+Do NOT repeat the same approach. Consider alternative techniques:
+- If you tried algorithmic changes, try caching/memoization instead
+- If you tried caching, try algorithmic restructuring instead
+- If you tried batching, try lazy evaluation or streaming instead
+- If you inlined code, try reducing allocations or using more efficient data structures
+
+The goal is to make every function FASTER and LEANER than the original baseline,
+not just different from your last attempt.
+"""
+
+
 async def _optimize_file(
     file_path: str,
     file_content: str,
     hotspots: list[Hotspot],
     benchmark_results: list[dict],
     correctness_failures: list[dict] | None = None,
+    previous_results: list[dict] | None = None,
     bias_instruction: str = "",
 ) -> tuple[str, list[OptimizationChange], str]:
     """Optimize a single file's hotspots. Returns (file_path, changes, optimized_content).
 
     If correctness_failures is provided, the prompt focuses on fixing the broken
     functions while preserving the performance optimization intent.
+    If previous_results is provided, the prompt warns about regressions from
+    a prior optimization attempt so the LLM pivots its strategy.
     """
     file_results = [r for r in benchmark_results if r.get("file") == file_path]
 
@@ -102,16 +168,22 @@ Rules:
   caching, reducing allocations, batching) rather than logic changes.
 """
 
+    regression_section = ""
+    if previous_results:
+        regression_section = _build_regression_section(
+            file_path, benchmark_results, previous_results,
+        )
+
     prompt = f"""## Bottlenecks in {file_path}
 ```json
 {json.dumps(hotspot_info, indent=2)}
 ```
 
-## Benchmark Results
+## Benchmark Results (Baseline)
 ```json
 {json.dumps(file_results, indent=2)}
 ```
-{correctness_section}
+{correctness_section}{regression_section}
 ## Source File: {file_path}
 ```
 {file_content[:8000]}
@@ -149,6 +221,7 @@ async def optimize_node(state: AgentState) -> dict:
     """Generate optimized code for identified bottlenecks, parallelized per-file."""
     analysis = AnalysisResult(**state.get("analysis", {}))
     initial_results = state.get("initial_results", [])
+    final_results = state.get("final_results", [])
     repo_path = state.get("repo_path", "")
     correctness_failures = state.get("correctness_failures", [])
     optimization_bias = state.get("optimization_bias", "balanced")
@@ -175,18 +248,21 @@ async def optimize_node(state: AgentState) -> dict:
         except Exception as e:
             log.warning("optimize_read_file_failed", file=file_path, error=str(e))
 
+    is_retry = bool(final_results)
     log.info(
         "optimize_start",
         num_hotspots=sum(len(v) for v in file_hotspots.values()),
         num_files=len(affected_files),
         affected_files=list(affected_files.keys()),
         has_correctness_failures=bool(correctness_failures),
+        is_retry=is_retry,
     )
 
     tasks = [
         _optimize_file(
             file_path, content, file_hotspots[file_path], initial_results,
             correctness_failures=correctness_failures,
+            previous_results=final_results if is_retry else None,
             bias_instruction=bias_instruction,
         )
         for file_path, content in affected_files.items()

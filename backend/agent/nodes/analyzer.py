@@ -5,7 +5,7 @@ import structlog
 
 from agent.schemas import AnalysisResult, BenchmarkBatch, BenchmarkScript, Hotspot, TriageChunk, TriageResult
 from agent.state import AgentState
-from services.gemini_service import GEMINI_FLASH, PRO_SETTINGS_MEDIUM, get_agent, run_agent_logged
+from services.gemini_service import GEMINI_FLASH, PRO_SETTINGS_HIGH, get_agent, run_agent_logged
 from services.log_utils import log_block
 from services.github_service import get_file_tree, read_file
 from services.parser_service import parse_repo
@@ -52,12 +52,21 @@ BENCHMARK_PROMPT = """You are a benchmarking expert. Given one or more performan
 in a codebase, generate a separate self-contained profiling script for EACH hotspot.
 
 CRITICAL SANDBOX CONSTRAINTS:
-- The sandbox has NO external packages installed (no npm packages, no pip packages except pyinstrument/memory_profiler)
-- For JavaScript: Do NOT require/import any external libraries (no react, lodash, express, etc.)
-- You MUST inline or mock any external dependencies
-- Only use Node.js built-in modules (fs, path, crypto, http, etc.)
-- Copy the target function's source code directly into the benchmark script
-- Create mock/stub data instead of importing real modules
+- The sandbox has common packages pre-installed (see list below), but you should
+  STILL prefer inlining or mocking over importing when the dependency isn't essential
+  to measuring the hotspot's algorithmic performance.
+- Pre-installed Python packages: numpy, pandas, requests, aiohttp, pydantic, sqlalchemy,
+  fastapi, flask, django, celery, redis, httpx, beautifulsoup4, lxml, pillow, scipy,
+  scikit-learn, pytest, pyinstrument, memory_profiler.
+- Pre-installed Node.js packages (available via require()): lodash, express, react,
+  react-dom, next, axios, framer-motion, zod, typescript, ts-node, jest, mocha, chai,
+  mongoose, pg, knex, sequelize, prisma, socket.io, ws, jsonwebtoken, bcrypt, uuid,
+  dayjs, moment, date-fns, cheerio, node-fetch, @tanstack/react-query, swr.
+- If a dependency is NOT in the pre-installed list above, you MUST mock/stub it.
+  Do NOT run `npm install`, `pip install`, or any package manager commands in the script.
+  Doing so will crash the container.
+- Copy the target function's source code directly into the benchmark script.
+- Create mock/stub data instead of importing real modules when measuring pure logic.
 
 INPUT SIZE — THIS IS CRITICAL:
 - Use input sizes large enough to reveal algorithmic complexity differences.
@@ -69,6 +78,9 @@ INPUT SIZE — THIS IS CRITICAL:
 - NEVER use trivially small inputs (N < 100). Small inputs hide algorithmic improvements
   behind constant-factor overhead and produce misleading benchmark results.
 - Run at least 50 iterations to get a stable average.
+- TOTAL SCRIPT EXECUTION MUST COMPLETE WITHIN 30 SECONDS. If the function is slow,
+  reduce the number of iterations (minimum 5) or input size until total runtime stays under 30s.
+  Use a warm-up call to estimate per-call cost, then choose iterations accordingly.
 
 For Python: Use time.perf_counter() for timing. Copy the target function into the script,
 set up realistic-sized test data (see INPUT SIZE above), and measure execution time.
@@ -243,7 +255,7 @@ async def _generate_benchmark_batch(
     )
 
     try:
-        result = await run_agent_logged(agent, prompt, node_name=f"gen_bench_batch_{batch_index}", model_settings=PRO_SETTINGS_MEDIUM)
+        result = await run_agent_logged(agent, prompt, node_name=f"gen_bench_batch_{batch_index}", model_settings=PRO_SETTINGS_HIGH)
         batch: BenchmarkBatch = result.output  # type: ignore[assignment]
         log.info(
             "benchmark_batch_generated",
