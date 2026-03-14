@@ -35,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${inter.variable} ${geistMono.variable} ${junicode.variable} antialiased bg-neutral-950 text-neutral-50`}
+        className={`${inter.variable} ${geistMono.variable} ${junicode.variable} antialiased bg-dark text-light`}
       >
         <Providers>
           {children}
