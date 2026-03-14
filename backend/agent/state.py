@@ -16,3 +16,4 @@ class AgentState(TypedDict, total=False):
     comparison: dict[str, Any]
     messages: list[str]
     error: str | None
+    retry_count: int

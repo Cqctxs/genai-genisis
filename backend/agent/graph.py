@@ -44,6 +44,7 @@ async def rerun_benchmarks_node(state: AgentState) -> dict:
     return {
         **state,
         "final_results": result.get("final_results", result.get("initial_results", [])),
+        "retry_count": state.get("retry_count", 0) + 1,
         "messages": state.get("messages", []) + ["Re-ran benchmarks on optimized code"],
     }
 
