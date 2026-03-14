@@ -1,5 +1,5 @@
 ---
-description: 
+description: Custom agent setup 
 alwaysApply: true
 ---
 
