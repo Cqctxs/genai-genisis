@@ -4,7 +4,7 @@ import structlog
 
 from agent.schemas import GraphData
 from agent.state import AgentState
-from services.gemini_service import GEMINI_PRO, get_agent
+from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
 
 log = structlog.get_logger()
 
@@ -28,6 +28,12 @@ async def visualize_node(state: AgentState) -> dict:
     ast_map = state.get("ast_map", {})
     initial_results = state.get("initial_results", [])
 
+    log.info(
+        "visualize_start",
+        ast_functions=len(ast_map.get("functions", [])),
+        benchmark_results=len(initial_results),
+    )
+
     agent = get_agent(GraphData, VISUALIZER_PROMPT, GEMINI_PRO)
 
     prompt = f"""## AST Map
@@ -42,9 +48,24 @@ async def visualize_node(state: AgentState) -> dict:
 
 Generate the React Flow graph data."""
 
-    log.info("generating_visualization")
-    result = await agent.run(prompt)
+    result = await run_agent_logged(agent, prompt, node_name="visualize")
     graph_data: GraphData = result.output  # type: ignore[assignment]
+
+    for node in graph_data.nodes:
+        log.info(
+            "graph_node",
+            id=node.id,
+            label=node.label,
+            file=node.file,
+            avg_time_ms=node.avg_time_ms,
+            severity=node.severity,
+        )
+
+    log.info(
+        "visualize_complete",
+        nodes=len(graph_data.nodes),
+        edges=len(graph_data.edges),
+    )
 
     return {
         **state,

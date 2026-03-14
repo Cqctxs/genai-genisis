@@ -413,3 +413,78 @@ class TestAgentState:
         state: AgentState = {}
         assert state.get("retry_count", 0) == 0
         assert state.get("messages", []) == []
+
+
+# ---------------------------------------------------------------------------
+# Issue 1: _run_agent must receive the queue directly, not look it up from
+#           the global dict.  A client disconnect before task start would pop
+#           the queue and cause a KeyError.
+# ---------------------------------------------------------------------------
+
+
+class TestRunAgentReceivesQueue:
+    async def test_run_agent_uses_passed_queue_not_dict(self):
+        """_run_agent should use the queue arg, not look it up from job_queues."""
+        import main
+
+        job_id = "test-queue-pass"
+        queue = asyncio.Queue()
+        main.jobs[job_id] = {"status": "pending", "result": None}
+
+        fake_result = {"graph_data": {}, "comparison": {}}
+        with patch("agent.graph.run_optimization_pipeline", new_callable=AsyncMock, return_value=fake_result):
+            await main._run_agent(job_id, "https://github.com/x/y", "tok", queue)
+
+        assert main.jobs[job_id]["status"] == "completed"
+        msg = await asyncio.wait_for(queue.get(), timeout=1.0)
+        assert msg["event"] == "complete"
+
+        main.jobs.pop(job_id, None)
+
+    async def test_run_agent_works_even_if_queue_popped_from_dict(self):
+        """Even if job_queues no longer has the entry, _run_agent succeeds."""
+        import main
+
+        job_id = "test-queue-popped"
+        queue = asyncio.Queue()
+        main.jobs[job_id] = {"status": "pending", "result": None}
+        main.job_queues.pop(job_id, None)
+
+        fake_result = {"graph_data": {}}
+        with patch("agent.graph.run_optimization_pipeline", new_callable=AsyncMock, return_value=fake_result):
+            await main._run_agent(job_id, "https://github.com/x/y", "tok", queue)
+
+        assert main.jobs[job_id]["status"] == "completed"
+        msg = await asyncio.wait_for(queue.get(), timeout=1.0)
+        assert msg["event"] == "complete"
+
+        main.jobs.pop(job_id, None)
+
+
+# ---------------------------------------------------------------------------
+# Issue 2: cleanup_node must offload shutil.rmtree to a thread.
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupNodeNonBlocking:
+    async def test_cleanup_uses_to_thread(self):
+        from agent.graph import cleanup_node
+
+        with patch("agent.graph.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+            state = {"repo_path": "/tmp/fakerepo"}
+            await cleanup_node(state)
+
+            mock_to_thread.assert_awaited_once()
+            args = mock_to_thread.call_args[0]
+            assert args[0].__name__ == "cleanup_repo"
+            assert args[1] == "/tmp/fakerepo"
+
+    async def test_cleanup_skips_empty_repo_path(self):
+        from agent.graph import cleanup_node
+
+        with patch("agent.graph.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+            await cleanup_node({"repo_path": ""})
+            mock_to_thread.assert_not_awaited()
+
+            await cleanup_node({})
+            mock_to_thread.assert_not_awaited()

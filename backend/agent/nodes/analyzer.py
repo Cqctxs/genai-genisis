@@ -5,7 +5,7 @@ import structlog
 
 from agent.schemas import AnalysisResult
 from agent.state import AgentState
-from services.gemini_service import GEMINI_PRO, get_agent
+from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
 from services.github_service import get_file_tree, read_file
 from services.parser_service import parse_repo
 
@@ -32,8 +32,16 @@ async def parse_ast_node(state: AgentState) -> dict:
     repo_path = state.get("repo_path", "")
     file_tree = get_file_tree(repo_path)
 
-    log.info("parsing_ast", num_files=len(file_tree))
+    log.info("parse_ast_start", num_files=len(file_tree), files_sample=file_tree[:10])
     ast_data = await asyncio.to_thread(parse_repo, repo_path, file_tree)
+
+    log.info(
+        "parse_ast_complete",
+        functions=len(ast_data.functions),
+        classes=len(ast_data.classes),
+        imports=len(ast_data.imports),
+        call_edges=len(ast_data.call_edges),
+    )
 
     return {
         **state,
@@ -60,6 +68,8 @@ async def analyze_node(state: AgentState) -> dict:
         except Exception:
             pass
 
+    log.info("analyze_start", num_key_files=len(key_files), key_files=list(key_files.keys()))
+
     agent = get_agent(AnalysisResult, ANALYSIS_PROMPT, GEMINI_PRO)
 
     user_prompt = f"""## AST Map
@@ -72,9 +82,20 @@ async def analyze_node(state: AgentState) -> dict:
     for path, content in list(key_files.items())[:10]:
         user_prompt += f"\n### {path}\n```\n{content[:3000]}\n```\n"
 
-    log.info("analyzing_repo", num_key_files=len(key_files))
-    result = await agent.run(user_prompt)
+    result = await run_agent_logged(agent, user_prompt, node_name="analyze")
     analysis: AnalysisResult = result.output  # type: ignore[assignment]
+
+    for hotspot in analysis.hotspots:
+        log.info(
+            "hotspot_found",
+            function=hotspot.function_name,
+            file=hotspot.file,
+            severity=hotspot.severity,
+            category=hotspot.category,
+            reasoning=hotspot.reasoning[:150],
+        )
+
+    log.info("analyze_complete", language=analysis.language, hotspots=len(analysis.hotspots))
 
     return {
         **state,

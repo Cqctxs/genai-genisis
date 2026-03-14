@@ -14,6 +14,7 @@ class AgentState(TypedDict, total=False):
     optimized_files: dict[str, str]
     final_results: list[dict[str, Any]]
     comparison: dict[str, Any]
+    pr_url: str
     messages: list[str]
     error: str | None
     retry_count: int

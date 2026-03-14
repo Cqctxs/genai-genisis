@@ -4,28 +4,43 @@ import structlog
 
 from agent.schemas import AnalysisResult, BenchmarkScript
 from agent.state import AgentState
-from services.gemini_service import GEMINI_PRO, get_agent
+from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
 
 log = structlog.get_logger()
 
 BENCHMARK_PROMPT = """You are a benchmarking expert. Given an analysis of performance bottlenecks
-in a codebase, generate profiling scripts that measure the performance of each identified hotspot.
+in a codebase, generate profiling scripts that measure the execution time of each identified hotspot.
 
-For Python: Use pyinstrument for profiling. Write scripts that import the target functions,
-set up minimal test data, and measure execution time and memory. Output timing in JSON format
-to stdout like: {"function": "name", "avg_time_ms": 123.4, "memory_peak_mb": 45.6, "iterations": 100}
+IMPORTANT: Do NOT include any memory measurement code. No tracemalloc, no memory_profiler,
+no process.memoryUsage(). Memory is measured automatically by the runtime sandbox wrapper.
+Focus ONLY on timing.
+
+For Python: Use time.perf_counter() or timeit to measure execution time. Write scripts that
+import the target functions, set up minimal realistic test data, run multiple iterations, and
+output a single JSON object on the LAST line of stdout:
+{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
 For JavaScript/TypeScript: Use performance.now() for timing. Write scripts that import target
-functions, set up test data, and output JSON results to stdout in the same format.
+functions, set up test data, run multiple iterations, and output a single JSON object on the
+LAST line of stdout:
+{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
-Each script should be self-contained and runnable. Include necessary imports and test data setup.
-Print ONLY the JSON result object to stdout."""
+Each script must be self-contained and runnable. Include all necessary imports and test data.
+Any debug/progress output must go to stderr or earlier stdout lines — the LAST line of stdout
+must be the JSON result object and nothing else."""
 
 
 async def generate_benchmarks_node(state: AgentState) -> dict:
     """Generate benchmark scripts targeting identified hotspots."""
     analysis = AnalysisResult(**state.get("analysis", {}))
     ast_map = state.get("ast_map", {})
+
+    log.info(
+        "generate_benchmarks_start",
+        num_hotspots=len(analysis.hotspots),
+        language=analysis.language,
+        targets=[h.function_name for h in analysis.hotspots],
+    )
 
     agent = get_agent(list[BenchmarkScript], BENCHMARK_PROMPT, GEMINI_PRO)
 
@@ -38,11 +53,23 @@ async def generate_benchmarks_node(state: AgentState) -> dict:
 Generate a profiling script for each hotspot. The language is: {analysis.language}
 """
 
-    log.info("generating_benchmarks", num_hotspots=len(analysis.hotspots))
-    result = await agent.run(prompt)
+    result = await run_agent_logged(agent, prompt, node_name="generate_benchmarks")
     benchmarks_out: list[BenchmarkScript] = result.output  # type: ignore[assignment]
 
+    for i, bench in enumerate(benchmarks_out):
+        log.info(
+            "benchmark_script_generated",
+            index=i,
+            target=bench.target_function,
+            file=bench.file,
+            language=bench.language,
+            script_chars=len(bench.script_content),
+            script_preview=bench.script_content[:200].replace("\n", "\\n"),
+        )
+
     benchmarks = [b.model_dump() for b in benchmarks_out]
+
+    log.info("generate_benchmarks_complete", count=len(benchmarks))
 
     return {
         **state,

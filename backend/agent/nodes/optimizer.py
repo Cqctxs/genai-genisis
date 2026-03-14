@@ -4,7 +4,7 @@ import structlog
 
 from agent.schemas import AnalysisResult, OptimizationPlan
 from agent.state import AgentState
-from services.gemini_service import GEMINI_PRO, get_agent
+from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
 from services.github_service import read_file
 
 log = structlog.get_logger()
@@ -44,8 +44,15 @@ async def optimize_node(state: AgentState) -> dict:
         if hotspot.file not in affected_files:
             try:
                 affected_files[hotspot.file] = read_file(repo_path, hotspot.file)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("optimize_read_file_failed", file=hotspot.file, error=str(e))
+
+    log.info(
+        "optimize_start",
+        num_hotspots=len(analysis.hotspots),
+        affected_files=list(affected_files.keys()),
+        affected_file_sizes={k: len(v) for k, v in affected_files.items()},
+    )
 
     agent = get_agent(OptimizationPlan, OPTIMIZER_PROMPT, GEMINI_PRO)
 
@@ -64,9 +71,19 @@ async def optimize_node(state: AgentState) -> dict:
     for path, content in affected_files.items():
         prompt += f"\n### {path}\n```\n{content[:5000]}\n```\n"
 
-    log.info("optimizing_code", num_hotspots=len(analysis.hotspots))
-    result = await agent.run(prompt)
+    result = await run_agent_logged(agent, prompt, node_name="optimize")
     plan: OptimizationPlan = result.output  # type: ignore[assignment]
+
+    for change in plan.changes:
+        log.info(
+            "optimization_change",
+            file=change.file,
+            function=change.function_name,
+            explanation=change.explanation[:200],
+            expected_improvement=change.expected_improvement,
+            original_chars=len(change.original_snippet),
+            optimized_chars=len(change.optimized_snippet),
+        )
 
     optimized_files = dict(affected_files)
     for change in plan.changes:
@@ -74,6 +91,13 @@ async def optimize_node(state: AgentState) -> dict:
             optimized_files[change.file] = optimized_files[change.file].replace(
                 change.original_snippet, change.optimized_snippet
             )
+
+    log.info(
+        "optimize_complete",
+        changes=len(plan.changes),
+        files_modified=len(optimized_files),
+        summary=plan.summary[:200],
+    )
 
     return {
         **state,
