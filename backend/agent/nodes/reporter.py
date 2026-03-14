@@ -5,7 +5,7 @@ import structlog
 from agent.schemas import ComparisonReport
 from agent.state import AgentState
 from services.modal_service import get_sandbox_specs
-from services.gemini_service import GEMINI_FLASH, get_agent
+from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
 log = structlog.get_logger()
 
@@ -34,6 +34,20 @@ async def report_node(state: AgentState) -> dict:
     initial_results = state.get("initial_results", [])
     final_results = state.get("final_results", [])
 
+    log.info(
+        "report_start",
+        initial_results_count=len(initial_results),
+        final_results_count=len(final_results),
+        initial_summary=[
+            {"fn": r.get("function_name"), "time_ms": r.get("avg_time_ms"), "mem_mb": r.get("memory_peak_mb")}
+            for r in initial_results
+        ],
+        final_summary=[
+            {"fn": r.get("function_name"), "time_ms": r.get("avg_time_ms"), "mem_mb": r.get("memory_peak_mb")}
+            for r in final_results
+        ],
+    )
+
     sandbox_specs = await get_sandbox_specs()
 
     agent = get_agent(ComparisonReport, REPORTER_PROMPT, GEMINI_FLASH)
@@ -53,15 +67,36 @@ async def report_node(state: AgentState) -> dict:
 
 Calculate the CodeMark score and generate the full comparison report."""
 
-    log.info("generating_report")
-    result = await agent.run(prompt)
+    result = await run_agent_logged(agent, prompt, node_name="report")
     report: ComparisonReport = result.output  # type: ignore[assignment]
     report.sandbox_specs = sandbox_specs
+
+    log.info(
+        "report_complete",
+        score_before=report.codemark_score.overall_before,
+        score_after=report.codemark_score.overall_after,
+        time_score=report.codemark_score.time_score,
+        memory_score=report.codemark_score.memory_score,
+        complexity_score=report.codemark_score.complexity_score,
+        functions_compared=len(report.functions),
+        summary=report.summary[:200],
+    )
+
+    for fn in report.functions:
+        log.info(
+            "function_comparison",
+            function=fn.function_name,
+            file=fn.file,
+            old_time_ms=fn.old_time_ms,
+            new_time_ms=fn.new_time_ms,
+            speedup=fn.speedup_factor,
+            memory_reduction_pct=fn.memory_reduction_pct,
+        )
 
     return {
         **state,
         "comparison": report.model_dump(),
         "messages": state.get("messages", []) + [
-            f"CodeMark Score: {report.codemark_score.overall_before:.0f} → {report.codemark_score.overall_after:.0f}"
+            f"CodeMark Score: {report.codemark_score.overall_before:.0f} -> {report.codemark_score.overall_after:.0f}"
         ],
     }

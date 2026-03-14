@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 
 import modal
 
@@ -75,6 +76,11 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     }
 
 
+def _lookup_function(name: str) -> modal.Function:
+    """Look up a deployed Modal function by name."""
+    return modal.Function.from_name("codemark-benchmarks", name)
+
+
 async def run_benchmark(
     code: str,
     language: str,
@@ -84,27 +90,47 @@ async def run_benchmark(
     import structlog
     log = structlog.get_logger()
 
-    log.info("starting_modal_sandbox", language=language)
     files = repo_files or {}
 
+    log.info(
+        "modal_benchmark_start",
+        language=language,
+        script_chars=len(code),
+        repo_files_count=len(files),
+        script_preview=code[:200].replace("\n", "\\n"),
+    )
+
     try:
-        if language == "python":
-            result = await asyncio.to_thread(
-                _run_python_benchmark.remote, code, files
-            )
-        else:
-            result = await asyncio.to_thread(
-                _run_js_benchmark.remote, code, files
-            )
+        func_name = "_run_python_benchmark" if language == "python" else "_run_js_benchmark"
+        fn = _lookup_function(func_name)
+        log.info("modal_calling_remote", function=func_name)
+        result = await asyncio.to_thread(fn.remote, code, files)
+        log.info("modal_remote_returned", function=func_name)
     except Exception as e:
-        log.error("modal_sandbox_failed", error=str(e))
+        log.error(
+            "modal_sandbox_failed",
+            language=language,
+            error_type=type(e).__name__,
+            error=str(e),
+            traceback=traceback.format_exc(),
+        )
         return {
             "stdout": "",
             "stderr": str(e),
             "error": str(e),
         }
 
-    log.info("modal_sandbox_complete", has_error=result.get("error") is not None)
+    log.info(
+        "modal_benchmark_result",
+        language=language,
+        has_error=result.get("error") is not None,
+        stdout_chars=len(result.get("stdout", "")),
+        stderr_chars=len(result.get("stderr", "")),
+        stdout_preview=result.get("stdout", "")[:300].replace("\n", "\\n"),
+        stderr_preview=result.get("stderr", "")[:300].replace("\n", "\\n") if result.get("stderr") else None,
+        error=result.get("error"),
+    )
+
     return result
 
 

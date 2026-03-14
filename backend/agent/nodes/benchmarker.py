@@ -4,7 +4,7 @@ import structlog
 
 from agent.schemas import AnalysisResult, BenchmarkScript
 from agent.state import AgentState
-from services.gemini_service import GEMINI_PRO, get_agent
+from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
 
 log = structlog.get_logger()
 
@@ -27,6 +27,13 @@ async def generate_benchmarks_node(state: AgentState) -> dict:
     analysis = AnalysisResult(**state.get("analysis", {}))
     ast_map = state.get("ast_map", {})
 
+    log.info(
+        "generate_benchmarks_start",
+        num_hotspots=len(analysis.hotspots),
+        language=analysis.language,
+        targets=[h.function_name for h in analysis.hotspots],
+    )
+
     agent = get_agent(list[BenchmarkScript], BENCHMARK_PROMPT, GEMINI_PRO)
 
     prompt = f"""## Analysis Results
@@ -38,11 +45,23 @@ async def generate_benchmarks_node(state: AgentState) -> dict:
 Generate a profiling script for each hotspot. The language is: {analysis.language}
 """
 
-    log.info("generating_benchmarks", num_hotspots=len(analysis.hotspots))
-    result = await agent.run(prompt)
+    result = await run_agent_logged(agent, prompt, node_name="generate_benchmarks")
     benchmarks_out: list[BenchmarkScript] = result.output  # type: ignore[assignment]
 
+    for i, bench in enumerate(benchmarks_out):
+        log.info(
+            "benchmark_script_generated",
+            index=i,
+            target=bench.target_function,
+            file=bench.file,
+            language=bench.language,
+            script_chars=len(bench.script_content),
+            script_preview=bench.script_content[:200].replace("\n", "\\n"),
+        )
+
     benchmarks = [b.model_dump() for b in benchmarks_out]
+
+    log.info("generate_benchmarks_complete", count=len(benchmarks))
 
     return {
         **state,
