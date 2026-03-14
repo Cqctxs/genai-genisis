@@ -1,3 +1,4 @@
+import os
 import re
 import time
 from urllib.parse import urlparse
@@ -9,6 +10,8 @@ log = structlog.get_logger()
 
 GITHUB_API = "https://api.github.com"
 BRANCH_PREFIX = "codemark/optimize"
+
+CODEMARK_BOT_TOKEN = os.environ.get("CODEMARK_BOT_TOKEN", "")
 
 
 def _parse_owner_repo(repo_url: str) -> tuple[str, str]:
@@ -85,6 +88,37 @@ def _build_pr_body(comparison: dict) -> str:
     return "\n".join(lines)
 
 
+async def _resolve_token(owner: str, repo: str, user_token: str) -> str:
+    """Pick the best token for PR creation.
+
+    Prefers CODEMARK_BOT_TOKEN so PRs are authored by the bot account.
+    Falls back to the user's token if the bot token is missing or lacks
+    push access to the target repo.
+    """
+    if not CODEMARK_BOT_TOKEN:
+        return user_token
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{GITHUB_API}/repos/{owner}/{repo}",
+            headers=_build_headers(CODEMARK_BOT_TOKEN),
+        )
+        if resp.status_code == 200:
+            permissions = resp.json().get("permissions", {})
+            if permissions.get("push"):
+                return CODEMARK_BOT_TOKEN
+            log.warning("bot_token_no_push_access", owner=owner, repo=repo)
+        else:
+            log.warning(
+                "bot_token_no_repo_access",
+                owner=owner,
+                repo=repo,
+                status=resp.status_code,
+            )
+
+    return user_token
+
+
 async def create_optimization_pr(
     repo_url: str,
     github_token: str,
@@ -93,6 +127,9 @@ async def create_optimization_pr(
 ) -> str:
     """Create a GitHub PR with the optimized code changes.
 
+    Uses CODEMARK_BOT_TOKEN if configured (so PRs appear as the bot account),
+    otherwise falls back to the user's token.
+
     Returns the PR HTML URL on success, or an empty string on failure.
     """
     if not optimized_files:
@@ -100,8 +137,13 @@ async def create_optimization_pr(
         return ""
 
     owner, repo = _parse_owner_repo(repo_url)
-    headers = _build_headers(github_token)
     branch_name = f"{BRANCH_PREFIX}-{int(time.time())}"
+
+    token = await _resolve_token(owner, repo, github_token)
+    is_bot = token == CODEMARK_BOT_TOKEN and bool(CODEMARK_BOT_TOKEN)
+    log.info("create_pr_token_resolved", is_bot=is_bot)
+
+    headers = _build_headers(token)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         # 1. Get default branch and its latest commit SHA
@@ -173,15 +215,20 @@ async def create_optimization_pr(
         tree_resp.raise_for_status()
         new_tree_sha = tree_resp.json()["sha"]
 
-        # 6. Create a commit on the new tree
+        # 6. Create a commit on the new tree (attributed to CodeMark)
+        commit_payload: dict = {
+            "message": "perf: CodeMark automated optimizations",
+            "tree": new_tree_sha,
+            "parents": [base_sha],
+            "author": {
+                "name": "CodeMark",
+                "email": "codemark-bot@users.noreply.github.com",
+            },
+        }
         new_commit_resp = await client.post(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/commits",
             headers=headers,
-            json={
-                "message": "perf: CodeMark automated optimizations",
-                "tree": new_tree_sha,
-                "parents": [base_sha],
-            },
+            json=commit_payload,
         )
         new_commit_resp.raise_for_status()
         new_commit_sha = new_commit_resp.json()["sha"]

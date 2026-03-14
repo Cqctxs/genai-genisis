@@ -1,4 +1,5 @@
 import asyncio
+import re
 import traceback
 
 import modal
@@ -107,6 +108,38 @@ if (!_patched) {
 """
 
 
+def _esm_to_cjs(code: str) -> str:
+    """Convert ES module import/export statements to CommonJS equivalents.
+
+    The JS memory wrapper loads the benchmark via require(), which means the
+    inner script must be CommonJS.  Gemini frequently generates ESM syntax
+    regardless of prompt instructions, so we patch it deterministically here.
+    """
+    # import { a, b } from "mod"  →  const { a, b } = require("mod")
+    code = re.sub(
+        r'import\s*\{([^}]+)\}\s*from\s*["\']([^"\']+)["\'];?',
+        r'const {\1} = require("\2");',
+        code,
+    )
+    # import X from "mod"  →  const X = require("mod")
+    code = re.sub(
+        r'import\s+(\w+)\s+from\s*["\']([^"\']+)["\'];?',
+        r'const \1 = require("\2");',
+        code,
+    )
+    # import "mod"  →  require("mod")
+    code = re.sub(
+        r'import\s+["\']([^"\']+)["\'];?',
+        r'require("\1");',
+        code,
+    )
+    # export default X  →  module.exports = X
+    code = re.sub(r'export\s+default\s+', 'module.exports = ', code)
+    # export { X }  →  (just remove, not needed for benchmarks)
+    code = re.sub(r'export\s*\{[^}]*\};?', '', code)
+    return code
+
+
 def _write_repo_files(workdir: str, repo_files: dict[str, str]) -> None:
     """Write repo file contents into the working directory."""
     import os
@@ -157,7 +190,7 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     _write_repo_files(workdir, repo_files)
 
     with open(os.path.join(workdir, "_benchmark_inner.js"), "w") as f:
-        f.write(code)
+        f.write(_esm_to_cjs(code))
 
     with open(os.path.join(workdir, "_benchmark.js"), "w") as f:
         f.write(JS_MEMORY_WRAPPER)

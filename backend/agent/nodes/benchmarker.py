@@ -20,9 +20,10 @@ import the target functions, set up minimal realistic test data, run multiple it
 output a single JSON object on the LAST line of stdout:
 {"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
-For JavaScript/TypeScript: Use performance.now() for timing. Write scripts that import target
-functions, set up test data, run multiple iterations, and output a single JSON object on the
-LAST line of stdout:
+For JavaScript/TypeScript: Use require() (CommonJS) NOT import (ESM). The sandbox runs
+scripts with plain `node` in CommonJS mode. Use `const { performance } = require("perf_hooks")`
+for timing. Write scripts that require target functions, set up test data, run multiple
+iterations, and output a single JSON object on the LAST line of stdout:
 {"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
 Each script must be self-contained and runnable. Include all necessary imports and test data.
