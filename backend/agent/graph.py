@@ -167,9 +167,9 @@ async def create_pr_node(state: AgentState) -> dict:
 
         # Detect permission errors
         # GitHub returns 404 (not 403) for write operations when token lacks push access
-        if "write permission" in error_str or "403" in error_str or "permission" in error_str or "404" in error_str or "not found" in error_str:
+        if isinstance(e, PermissionError) or "write permission" in error_str or "403" in error_str or "permission" in error_str or "push access" in error_str or "404" in error_str or "not found" in error_str:
             pr_status = "permission_denied"
-            pr_error = "GitHub token does not have write permission to this repository. Please use a token with the 'repo' scope."
+            pr_error = str(e)
         else:
             pr_status = "failed"
             pr_error = f"Failed to create pull request: {e}"
