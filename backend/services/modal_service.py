@@ -4,8 +4,9 @@ import traceback
 
 import modal
 
-BENCHMARK_TIMEOUT = 60
-FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + 30
+BENCHMARK_TIMEOUT = 120
+DEP_INSTALL_TIMEOUT = 120
+FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + DEP_INSTALL_TIMEOUT + 30  # headroom
 
 app = modal.App("codemark-benchmarks")
 
