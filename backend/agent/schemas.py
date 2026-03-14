@@ -177,3 +177,17 @@ class ComparisonReport(BaseModel):
     benchy_score: CodeMarkScore
     summary: str
     sandbox_specs: str = ""
+
+
+class BenchmarkDetail(BaseModel):
+    """A single benchmark with its script, before/after results, and summary."""
+    function_name: str
+    file: str
+    language: str
+    script_content: str
+    before_time_ms: float
+    before_memory_mb: float
+    after_time_ms: float
+    after_memory_mb: float
+    speedup_factor: float
+    summary: str = ""
