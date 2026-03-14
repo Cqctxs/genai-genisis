@@ -65,7 +65,7 @@ export interface RadarAxis {
   after: number;
 }
 
-export interface CodeMarkScore {
+export interface BenchyScore {
   overall_before: number;
   overall_after: number;
   time_score: number;
@@ -87,7 +87,7 @@ export interface FunctionComparison {
 
 export interface ComparisonReport {
   functions: FunctionComparison[];
-  codemark_score: CodeMarkScore;
+  benchy_score: BenchyScore;
   summary: string;
   sandbox_specs: string;
 }
@@ -99,6 +99,7 @@ export interface JobResult {
   initial_results: any[];
   final_results: any[];
   analysis: any;
+  pr_url: string;
 }
 
 export async function startAnalysis(

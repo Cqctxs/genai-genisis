@@ -9,19 +9,27 @@ from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
 
 log = structlog.get_logger()
 
-BENCHMARK_PROMPT = """You are a benchmarking expert. Given an analysis of a performance bottleneck
-in a codebase, generate a profiling script that measures the performance of the identified hotspot.
+BENCHMARK_PROMPT = """You are a benchmarking expert. Given an analysis of performance bottlenecks
+in a codebase, generate profiling scripts that measure the execution time of each identified hotspot.
 
-For Python: Use pyinstrument for profiling. Write a script that imports the target function,
-sets up minimal test data, and measures execution time and memory. Output timing in JSON format
-to stdout like: {"function": "name", "avg_time_ms": 123.4, "memory_peak_mb": 45.6, "iterations": 100}
+IMPORTANT: Do NOT include any memory measurement code. No tracemalloc, no memory_profiler,
+no process.memoryUsage(). Memory is measured automatically by the runtime sandbox wrapper.
+Focus ONLY on timing.
 
-For JavaScript/TypeScript: Use require() for imports (NOT import syntax). Use performance.now() for timing.
-Write a script that requires the target function, sets up test data, and outputs JSON results to stdout in the same format.
-Node.js runs in CommonJS mode, so use require() not import statements.
+For Python: Use time.perf_counter() or timeit to measure execution time. Write scripts that
+import the target functions, set up minimal realistic test data, run multiple iterations, and
+output a single JSON object on the LAST line of stdout:
+{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
 
-The script should be self-contained and runnable. Include necessary requires and test data setup.
-Print ONLY the JSON result object to stdout."""
+For JavaScript/TypeScript: Use require() (CommonJS) NOT import (ESM). The sandbox runs
+scripts with plain `node` in CommonJS mode. Use `const { performance } = require("perf_hooks")`
+for timing. Write scripts that require target functions, set up test data, run multiple
+iterations, and output a single JSON object on the LAST line of stdout:
+{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
+
+The script must be self-contained and runnable. Include all necessary requires and test data.
+Any debug/progress output must go to stderr or earlier stdout lines — the LAST line of stdout
+must be the JSON result object and nothing else."""
 
 
 async def _generate_single_benchmark(

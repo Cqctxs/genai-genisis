@@ -4,7 +4,7 @@ import { useState } from "react";
 import { LiveTelemetry } from "@/components/live-telemetry";
 import { PerformanceGraph } from "@/components/performance-graph";
 import { ScoreDashboard } from "@/components/score-dashboard";
-import { ComparisonView } from "@/components/comparison-view";
+import { PullRequestView } from "@/components/comparison-view";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ const FAKE_MESSAGES = [
   { node: "optimize", message: "Optimizing aggregate_metrics: replaced O(n²) with hash-based merge", timestamp: Date.now() - 6000 },
   { node: "rerun_benchmarks", message: "Re-benchmarking optimized code...", timestamp: Date.now() - 4000 },
   { node: "rerun_benchmarks", message: "process_batch improved: 142.3ms → 31.2ms (4.6x)", timestamp: Date.now() - 3000 },
-  { node: "report", message: "Computing CodeMark score delta...", timestamp: Date.now() - 2000 },
+  { node: "report", message: "Computing Benchy score delta...", timestamp: Date.now() - 2000 },
   { node: "cleanup", message: "Destroying sandbox. Analysis complete.", timestamp: Date.now() - 1000 },
 ];
 
@@ -66,7 +66,7 @@ const FAKE_COMPARISON: ComparisonReport = {
     { function_name: "write_output", file: "io.py", old_time_ms: 45.2, new_time_ms: 18.9, speedup_factor: 2.4, old_memory_mb: 8.1, new_memory_mb: 5.2, memory_reduction_pct: 35.8 },
     { function_name: "validate_schema", file: "validation.py", old_time_ms: 18.4, new_time_ms: 7.1, speedup_factor: 2.6, old_memory_mb: 3.2, new_memory_mb: 2.0, memory_reduction_pct: 37.5 },
   ],
-  codemark_score: {
+  benchy_score: {
     overall_before: 3420,
     overall_after: 8940,
     time_score: 91,
@@ -81,7 +81,7 @@ const FAKE_COMPARISON: ComparisonReport = {
     ],
   },
   summary:
-    "Analysis of acme/data-pipeline identified 5 performance bottlenecks across the data processing pipeline. Key optimizations include vectorizing the inner loop in process_batch() using NumPy, replacing the O(n²) nested merge in aggregate_metrics() with a hash-based approach, and introducing chunked I/O writes. Overall CodeMark score improved from 3,420 to 8,940 — a 2.6x improvement across execution time, memory, and complexity dimensions.",
+    "Analysis of acme/data-pipeline identified 5 performance bottlenecks across the data processing pipeline. Key optimizations include vectorizing the inner loop in process_batch() using NumPy, replacing the O(n²) nested merge in aggregate_metrics() with a hash-based approach, and introducing chunked I/O writes. Overall Benchy score improved from 3,420 to 8,940 — a 2.6x improvement across execution time, memory, and complexity dimensions.",
   sandbox_specs: "E2B Cloud Sandbox · 2 vCPU · 4 GB RAM · Python 3.12 · Ubuntu 22.04",
 };
 
@@ -134,65 +134,6 @@ def transform_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 `,
 };
 
-const FAKE_ANALYSIS = {
-  original_files: {
-    "pipeline.py": `from typing import List, Dict, Any
-
-def process_batch(records: List[Dict[str, Any]], batch_size: int = 1000) -> List[Dict[str, Any]]:
-    \"\"\"Process records in batches.\"\"\"
-    results = []
-    for i in range(0, len(records), batch_size):
-        batch = records[i : i + batch_size]
-        for record in batch:
-            value = record["value"]
-            # Normalize against all records in batch
-            total = sum(r["value"] for r in batch)
-            mean = total / len(batch)
-            variance = sum((r["value"] - mean) ** 2 for r in batch) / len(batch)
-            std = variance ** 0.5
-            if std == 0:
-                std = 1e-8
-            normalized = (value - mean) / std
-            scaled = normalized * 100
-            results.append({**record, "processed_value": scaled})
-    return results
-`,
-    "metrics.py": `from typing import List, Dict, Any
-
-def aggregate_metrics(records: List[Dict[str, Any]]) -> Dict[str, float]:
-    \"\"\"Aggregate metrics by category.\"\"\"
-    categories = list(set(r["category"] for r in records))
-    result = {}
-    for cat in categories:
-        matching = [r for r in records if r["category"] == cat]
-        total = 0
-        for r in matching:
-            total += r["processed_value"]
-        result[cat] = total / len(matching) if matching else 0
-    return result
-`,
-    "transform.py": `from typing import List, Dict, Any
-
-def transform_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    \"\"\"Transform records to canonical field names.\"\"\"
-    result = []
-    for record in records:
-        new_record = {}
-        for key, value in record.items():
-            if key == "ts":
-                new_record["timestamp"] = value
-            elif key == "val":
-                new_record["value"] = value
-            elif key == "cat":
-                new_record["category"] = value
-            else:
-                new_record[key] = value
-        result.append(new_record)
-    return result
-`,
-  },
-};
-
 type Phase = "idle" | "analyzing" | "benchmarking" | "optimizing" | "re-benchmarking" | "scoring" | "complete" | "error";
 
 const PHASES: Phase[] = ["idle", "analyzing", "benchmarking", "optimizing", "re-benchmarking", "scoring", "complete", "error"];
@@ -204,8 +145,8 @@ export default function DebugPage() {
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-neutral-800 px-6 py-3 flex items-center justify-between sticky top-0 bg-neutral-950/90 backdrop-blur-sm z-50">
         <h1 className="text-lg font-semibold tracking-tight">
-          Code<span className="text-blue-500">Mark</span>
-          <span className="text-xs ml-2 text-neutral-500 font-normal">Debug Mode</span>
+          Benchy
+          <span className="text-xs ml-2 text-neutral-500 font-normal font-sans">Debug Mode</span>
         </h1>
         <a href="/" className="text-sm text-neutral-500 hover:text-white transition-colors">
           ← Back to app
@@ -230,7 +171,7 @@ export default function DebugPage() {
             <h3 className="text-2xl font-medium">Heading 3 — Pack my box with five dozen liquor jugs</h3>
             <h4 className="text-xl">Heading 4 — How vexingly quick daft zebras jump</h4>
             <p className="text-base text-neutral-300">
-              Body text — CodeMark analyzes your codebase using AST parsing, profiles bottlenecks in a sandboxed environment, and
+              Body text — Benchy analyzes your codebase using AST parsing, profiles bottlenecks in a sandboxed environment, and
               produces optimized code with a before/after performance score. Built with LangGraph, Gemini, and E2B.
             </p>
             <p className="text-sm text-neutral-500">
@@ -430,12 +371,13 @@ export default function DebugPage() {
           </ErrorBoundary>
         </Section>
 
-        {/* ── Comparison View ── */}
-        <Section title="Code Diff / Comparison View">
+        {/* ── Pull Request View ── */}
+        <Section title="Pull Request View">
           <ErrorBoundary>
-            <ComparisonView
+            <PullRequestView
+              prUrl="https://github.com/acme/data-pipeline/pull/42"
               optimizedFiles={FAKE_OPTIMIZED_FILES}
-              analysis={FAKE_ANALYSIS}
+              comparison={FAKE_COMPARISON}
             />
           </ErrorBoundary>
         </Section>
@@ -459,7 +401,7 @@ export default function DebugPage() {
       </main>
 
       <footer className="border-t border-neutral-800 py-4 text-center text-xs text-neutral-600">
-        CodeMark Debug Mode — All components rendered with synthetic data
+        Benchy Debug Mode — All components rendered with synthetic data
       </footer>
     </div>
   );

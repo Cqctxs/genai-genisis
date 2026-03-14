@@ -15,6 +15,7 @@ class AgentState(TypedDict, total=False):
     final_results: list[dict[str, Any]]
     triage_result: dict[str, Any]
     comparison: dict[str, Any]
+    pr_url: str
     messages: list[str]
     error: str | None
     retry_count: int
