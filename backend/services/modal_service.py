@@ -7,7 +7,6 @@ import modal
 BENCHMARK_TIMEOUT = 120
 DEP_INSTALL_TIMEOUT = 120
 FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + DEP_INSTALL_TIMEOUT + 30  # headroom
-BATCH_FUNCTION_TIMEOUT = DEP_INSTALL_TIMEOUT + 8 * BENCHMARK_TIMEOUT + 60
 
 app = modal.App("codemark-benchmarks")
 
@@ -39,41 +38,28 @@ python_image = (
 
 node_image = (
     modal.Image.debian_slim()
-    .apt_install("curl", "build-essential", "git")
+    .apt_install("curl")
     .run_commands(
-        # Install nvm and latest Node.js, then create symlinks in /usr/bin
-        """bash -c '
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-        export NVM_DIR="/root/.nvm"
-        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-        nvm install --lts
-        nvm use --lts
-        # Get the installed node version path
-        NODE_VERSION=$(node -v | cut -c2-)
-        NODE_DIR="$NVM_DIR/versions/node/v${NODE_VERSION}"
-        # Create symlinks in standard system paths
-        ln -sf "$NODE_DIR/bin/node" /usr/bin/node
-        ln -sf "$NODE_DIR/bin/npm" /usr/bin/npm
-        ln -sf "$NODE_DIR/bin/npx" /usr/bin/npx
-        # Verify
-        node --version
-        npm --version
-        '"""
+        "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash",
+        "bash -i -c 'nvm install --lts && nvm use --lts'",
     )
     .run_commands(
-        # Install global npm packages
-        "npm install -g "
-        "lodash express react react-dom next "
-        "axios framer-motion zod "
-        "typescript ts-node "
-        "jest mocha chai "
-        "mongoose pg knex sequelize prisma "
-        "socket.io ws "
-        "jsonwebtoken bcrypt uuid "
-        "dayjs moment date-fns "
-        "cheerio node-fetch "
-        "@tanstack/react-query swr"
+        "bash -i -c 'ln -sf /root/.nvm/versions/node/*/bin/node /usr/local/bin/node && ln -sf /root/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && ln -sf /root/.nvm/versions/node/*/bin/npx /usr/local/bin/npx'"
     )
+    .run_commands(
+        "bash -i -c 'npm install -g "
+        "lodash@latest express@latest react@latest react-dom@latest next@latest "
+        "axios@latest framer-motion@latest zod@latest "
+        "typescript@latest ts-node@latest "
+        "jest@latest mocha@latest chai@latest "
+        "mongoose@latest pg@latest knex@latest sequelize@latest prisma@latest "
+        "socket.io@latest ws@latest "
+        "jsonwebtoken@latest bcrypt@latest uuid@latest "
+        "dayjs@latest moment@latest date-fns@latest "
+        "cheerio@latest node-fetch@latest "
+        "@tanstack/react-query@latest swr@latest'"
+    )
+    .env({"NODE_PATH": "/usr/local/lib/node_modules"})
 )
 
 # ---------------------------------------------------------------------------
@@ -213,66 +199,6 @@ def _write_repo_files(workdir: str, repo_files: dict[str, str]) -> None:
             f.write(content)
 
 
-def _symlink_repo_into(repo_dir: str, bench_dir: str) -> None:
-    """Symlink top-level repo entries into a per-benchmark subdirectory."""
-    import os
-
-    for entry in os.listdir(repo_dir):
-        src = os.path.join(repo_dir, entry)
-        dst = os.path.join(bench_dir, entry)
-        if not os.path.lexists(dst):
-            os.symlink(src, dst, target_is_directory=os.path.isdir(src))
-
-
-def _install_python_deps(repo_dir: str) -> str:
-    """pip install from requirements.txt if present. Returns a log string."""
-    import os
-    import subprocess
-
-    req_path = os.path.join(repo_dir, "requirements.txt")
-    if not os.path.isfile(req_path):
-        return ""
-    try:
-        proc = subprocess.run(
-            ["pip", "install", "-r", req_path, "--quiet", "--no-warn-script-location"],
-            capture_output=True,
-            text=True,
-            timeout=DEP_INSTALL_TIMEOUT,
-        )
-        if proc.returncode != 0:
-            return f"pip install failed (exit {proc.returncode}): {proc.stderr[-500:]}"
-        return "pip install ok"
-    except subprocess.TimeoutExpired:
-        return f"pip install timed out after {DEP_INSTALL_TIMEOUT}s"
-    except Exception as e:
-        return f"pip install error: {e}"
-
-
-def _install_js_deps(repo_dir: str) -> str:
-    """npm install from package.json if present. Returns a log string."""
-    import os
-    import subprocess
-
-    pkg_path = os.path.join(repo_dir, "package.json")
-    if not os.path.isfile(pkg_path):
-        return ""
-    try:
-        proc = subprocess.run(
-            ["npm", "install", "--production", "--no-audit", "--no-fund"],
-            capture_output=True,
-            text=True,
-            timeout=DEP_INSTALL_TIMEOUT,
-            cwd=repo_dir,
-        )
-        if proc.returncode != 0:
-            return f"npm install failed (exit {proc.returncode}): {proc.stderr[-500:]}"
-        return "npm install ok"
-    except subprocess.TimeoutExpired:
-        return f"npm install timed out after {DEP_INSTALL_TIMEOUT}s"
-    except Exception as e:
-        return f"npm install error: {e}"
-
-
 @app.function(image=python_image, timeout=FUNCTION_TIMEOUT)
 def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     import subprocess
@@ -331,143 +257,6 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
         "stderr": result.stderr,
         "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {result.stderr[-500:]}",
     }
-
-
-# ---------------------------------------------------------------------------
-# Batched benchmark execution
-#
-# These run all same-language benchmarks in a single container, writing repo
-# files once, installing repo dependencies once, then looping over each
-# benchmark in an isolated subdirectory (symlinked to shared repo files).
-# ---------------------------------------------------------------------------
-
-
-@app.function(image=python_image, timeout=BATCH_FUNCTION_TIMEOUT, min_containers=1)
-def _run_python_benchmarks_batch(
-    benchmarks: list[dict], repo_files: dict[str, str]
-) -> list[dict]:
-    """Run multiple Python benchmarks sequentially in a single container."""
-    import os
-    import subprocess
-    import tempfile
-
-    workdir = tempfile.mkdtemp()
-    repo_dir = os.path.join(workdir, "_repo")
-    os.makedirs(repo_dir)
-    _write_repo_files(repo_dir, repo_files)
-
-    _install_python_deps(repo_dir)
-
-    results: list[dict] = []
-    for bench in benchmarks:
-        bid = bench["id"]
-        bench_dir = os.path.join(workdir, f"_bench_{bid}")
-        os.makedirs(bench_dir)
-        _symlink_repo_into(repo_dir, bench_dir)
-
-        with open(os.path.join(bench_dir, "_benchmark_inner.py"), "w") as f:
-            f.write(bench["code"])
-        with open(os.path.join(bench_dir, "_benchmark.py"), "w") as f:
-            f.write(PYTHON_MEMORY_WRAPPER)
-
-        try:
-            proc = subprocess.run(
-                ["python", "_benchmark.py"],
-                capture_output=True,
-                text=True,
-                timeout=BENCHMARK_TIMEOUT,
-                cwd=bench_dir,
-            )
-            results.append({
-                "id": bid,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-                "error": (
-                    None
-                    if proc.returncode == 0
-                    else f"Exit code {proc.returncode}: {proc.stderr[-500:]}"
-                ),
-            })
-        except subprocess.TimeoutExpired:
-            results.append({
-                "id": bid,
-                "stdout": "",
-                "stderr": f"Benchmark timed out after {BENCHMARK_TIMEOUT}s",
-                "error": f"Benchmark timed out after {BENCHMARK_TIMEOUT}s",
-            })
-        except Exception as e:
-            results.append({
-                "id": bid,
-                "stdout": "",
-                "stderr": str(e),
-                "error": str(e),
-            })
-
-    return results
-
-
-@app.function(image=node_image, timeout=BATCH_FUNCTION_TIMEOUT, min_containers=1)
-def _run_js_benchmarks_batch(
-    benchmarks: list[dict], repo_files: dict[str, str]
-) -> list[dict]:
-    """Run multiple JS benchmarks sequentially in a single container."""
-    import os
-    import subprocess
-    import tempfile
-
-    workdir = tempfile.mkdtemp()
-    repo_dir = os.path.join(workdir, "_repo")
-    os.makedirs(repo_dir)
-    _write_repo_files(repo_dir, repo_files)
-
-    _install_js_deps(repo_dir)
-
-    results: list[dict] = []
-    for bench in benchmarks:
-        bid = bench["id"]
-        bench_dir = os.path.join(workdir, f"_bench_{bid}")
-        os.makedirs(bench_dir)
-        _symlink_repo_into(repo_dir, bench_dir)
-
-        with open(os.path.join(bench_dir, "_benchmark_inner.js"), "w") as f:
-            f.write(_esm_to_cjs(bench["code"]))
-        with open(os.path.join(bench_dir, "_benchmark.js"), "w") as f:
-            f.write(JS_MEMORY_WRAPPER)
-
-        try:
-            proc = subprocess.run(
-                ["node", "_benchmark.js"],
-                capture_output=True,
-                text=True,
-                timeout=BENCHMARK_TIMEOUT,
-                cwd=bench_dir,
-            )
-            results.append({
-                "id": bid,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-                "error": (
-                    None
-                    if proc.returncode == 0
-                    else f"Exit code {proc.returncode}: {proc.stderr[-500:]}"
-                ),
-            })
-        except subprocess.TimeoutExpired:
-            results.append({
-                "id": bid,
-                "stdout": "",
-                "stderr": f"Benchmark timed out after {BENCHMARK_TIMEOUT}s",
-                "error": f"Benchmark timed out after {BENCHMARK_TIMEOUT}s",
-            })
-        except Exception as e:
-            results.append({
-                "id": bid,
-                "stdout": "",
-                "stderr": str(e),
-                "error": str(e),
-            })
-
-    return results
 
 
 @app.function(image=python_image, timeout=30)
@@ -594,103 +383,6 @@ async def run_benchmark(
     )
 
     return result
-
-
-async def run_benchmarks_batch(
-    benchmarks: list[dict],
-    repo_files: dict[str, str],
-) -> list[dict]:
-    """Execute benchmarks in batched Modal calls -- one per language.
-
-    Each dict in *benchmarks* must have keys: id, code, language.
-    Returns a list of dicts with keys: id, stdout, stderr, error -- in
-    the same order as the input.
-    """
-    import time
-
-    import structlog
-
-    from services.log_utils import log_block
-
-    log = structlog.get_logger()
-
-    python_benchmarks = [b for b in benchmarks if b["language"] == "python"]
-    js_benchmarks = [b for b in benchmarks if b["language"] != "python"]
-
-    log_block(
-        "MODAL BATCH CALL",
-        metadata={
-            "total_benchmarks": len(benchmarks),
-            "python_count": len(python_benchmarks),
-            "js_count": len(js_benchmarks),
-            "repo_files_count": len(repo_files),
-        },
-        color="magenta",
-    )
-
-    start = time.monotonic()
-    coros = []
-
-    if python_benchmarks:
-        fn = _lookup_function("_run_python_benchmarks_batch")
-        coros.append(asyncio.to_thread(fn.remote, python_benchmarks, repo_files))
-    if js_benchmarks:
-        fn = _lookup_function("_run_js_benchmarks_batch")
-        coros.append(asyncio.to_thread(fn.remote, js_benchmarks, repo_files))
-
-    results_by_id: dict[int, dict] = {}
-
-    try:
-        raw_results = await asyncio.gather(*coros)
-        for batch_results in raw_results:
-            for r in batch_results:
-                results_by_id[r["id"]] = r
-    except Exception as e:
-        elapsed = time.monotonic() - start
-        log_block(
-            "MODAL BATCH ERROR",
-            metadata={
-                "error_type": type(e).__name__,
-                "elapsed_s": round(elapsed, 2),
-            },
-            sections={"ERROR": str(e), "TRACEBACK": traceback.format_exc()},
-            color="red",
-        )
-        return [
-            {"id": b["id"], "stdout": "", "stderr": str(e), "error": str(e)}
-            for b in benchmarks
-        ]
-
-    elapsed = time.monotonic() - start
-    ordered: list[dict] = []
-    for b in benchmarks:
-        r = results_by_id.get(
-            b["id"],
-            {
-                "id": b["id"],
-                "stdout": "",
-                "stderr": "Missing from batch results",
-                "error": "Missing from batch results",
-            },
-        )
-        ordered.append(r)
-
-    error_count = sum(1 for r in ordered if r.get("error"))
-    log_block(
-        "MODAL BATCH RESULT",
-        metadata={
-            "elapsed_s": round(elapsed, 2),
-            "total_benchmarks": len(benchmarks),
-            "errors": error_count,
-        },
-        sections={
-            f"BENCH {r['id']}": (r.get("error") or "ok")
-            for r in ordered
-        },
-        color="cyan" if error_count == 0 else "yellow",
-    )
-
-    return ordered
 
 
 _specs_cache: dict | None = None

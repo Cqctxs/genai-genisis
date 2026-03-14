@@ -249,20 +249,19 @@ async def optimization_pipeline(repo_url: str, github_token: str, optimization_b
     await rt.broadcast("Streaming analysis and benchmarks per chunk...")
     state.update(await chunk_analyze_node(state))
 
-    # ── Parallel: visualize + optimize ───────────────────────────────────
+    # ── Visualize (background) + Optimize (critical path) ────────────────
+    # Visualization is only needed for the final result payload — run it in
+    # the background so the optimization retry loop can start immediately.
     await rt.broadcast("Generating visualization and optimizations...")
-    viz_task = visualize_node(state)
-    opt_task = optimize_node(state)
-    viz_result, opt_result = await asyncio.gather(viz_task, opt_task)
+    viz_bg_task = asyncio.create_task(visualize_node(AgentState(**state)))
+    opt_result = await optimize_node(state)
 
     base_msgs = list(state.get("messages", []))
     base_count = len(base_msgs)
-    new_viz_msgs = viz_result.get("messages", [])[base_count:]
     new_opt_msgs = opt_result.get("messages", [])[base_count:]
 
-    state["graph_data"] = viz_result.get("graph_data", {})
     state["optimized_files"] = opt_result.get("optimized_files", {})
-    state["messages"] = base_msgs + new_viz_msgs + new_opt_msgs
+    state["messages"] = base_msgs + new_opt_msgs
 
     # ── Optimization retry loop ──────────────────────────────────────────
     # Replaces LangGraph's conditional edges:
@@ -289,6 +288,15 @@ async def optimization_pipeline(repo_url: str, github_token: str, optimization_b
 
         await rt.broadcast("Re-optimizing based on benchmark feedback...")
         state.update(await optimize_node(state))
+
+    # ── Collect visualization result ─────────────────────────────────────
+    # The background task was started before the retry loop; collect it now.
+    try:
+        viz_result = await viz_bg_task
+        state["graph_data"] = viz_result.get("graph_data", {})
+    except Exception as e:
+        log.warning("visualize_background_failed", error=str(e))
+        state.setdefault("graph_data", {})
 
     # ── Report ───────────────────────────────────────────────────────────
     await rt.broadcast("Generating CodeMark report...")

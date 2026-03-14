@@ -6,7 +6,7 @@ import structlog
 
 from agent.schemas import BenchmarkResult, BenchmarkScript
 from agent.state import AgentState
-from services.modal_service import run_benchmark, run_benchmarks_batch
+from services.modal_service import run_benchmark
 from services.github_service import read_file
 
 log = structlog.get_logger()
@@ -325,16 +325,31 @@ def compare_fingerprints(
 
 
 async def run_benchmarks_node(state: AgentState) -> dict:
-    """Execute benchmark scripts in Modal sandboxes in parallel and collect results."""
+    """Execute benchmark scripts in Modal sandboxes in parallel and collect results.
+
+    On re-runs, benchmarks whose target file was not modified by the optimizer are
+    short-circuited: the previous result is reused and no Modal call is made.
+    """
     benchmarks = [BenchmarkScript(**b) for b in state.get("benchmark_code", [])]
     repo_path = state.get("repo_path", "")
     file_tree = state.get("file_tree", [])
     results_key = "initial_results" if "initial_results" not in state else "final_results"
 
+    # Build a lookup from (function_name, file) -> previous result so unmodified
+    # benchmarks can be reused cheaply.  On the initial run there are no previous
+    # results, so this dict is empty and every benchmark runs normally.
+    optimized_files: set[str] = set(state.get("optimized_files", {}).keys())
+    previous_results: list[dict] = state.get("final_results", state.get("initial_results", []))
+    prev_by_key: dict[tuple[str, str], dict] = {
+        (r.get("function_name", ""), r.get("file", "")): r
+        for r in previous_results
+    }
+
     log.info(
         "run_benchmarks_start",
         num_benchmarks=len(benchmarks),
         results_key=results_key,
+        optimized_files=list(optimized_files),
         targets=[b.target_function for b in benchmarks],
     )
 
@@ -361,29 +376,23 @@ async def run_benchmarks_node(state: AgentState) -> dict:
 
     ast_map = state.get("ast_map", {})
 
-    batch_payload = [
-        {"id": i, "code": bench.script_content, "language": bench.language}
-        for i, bench in enumerate(benchmarks)
-    ]
-    batch_outputs = await run_benchmarks_batch(batch_payload, repo_files)
+    async def _run_or_reuse(bench: BenchmarkScript, index: int) -> dict:
+        key = (bench.target_function, bench.file)
+        # Only skip if we actually know which files were optimized (re-run) AND
+        # this benchmark's file was not among them.
+        if optimized_files and bench.file not in optimized_files:
+            cached = prev_by_key.get(key)
+            if cached is not None:
+                log.info(
+                    "benchmark_reused_unchanged_file",
+                    target=bench.target_function,
+                    file=bench.file,
+                )
+                return cached
+        return await _execute_single_benchmark(bench, index, repo_files, ast_map=ast_map or None)
 
-    results: list[dict] = []
-    failed: list[tuple[int, BenchmarkScript, str, dict]] = []
-    for i, (bench, output) in enumerate(zip(benchmarks, batch_outputs)):
-        result, error_desc = _parse_benchmark_output(bench, output)
-        results.append(result)
-        if _is_failed_result(result) and ast_map:
-            failed.append((i, bench, error_desc or "Unknown failure", output))
-
-    if failed:
-        log.info("batch_retrying_failures", count=len(failed))
-        retry_tasks = [
-            _execute_single_benchmark(bench, idx, repo_files, ast_map=ast_map)
-            for idx, bench, _, _ in failed
-        ]
-        retry_results = await asyncio.gather(*retry_tasks)
-        for (idx, _, _, _), retry_result in zip(failed, retry_results):
-            results[idx] = retry_result
+    tasks = [_run_or_reuse(bench, i) for i, bench in enumerate(benchmarks)]
+    results = list(await asyncio.gather(*tasks))
 
     total_time = sum(r["avg_time_ms"] for r in results)
     log.info(
