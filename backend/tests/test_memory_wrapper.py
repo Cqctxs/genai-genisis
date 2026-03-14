@@ -310,8 +310,7 @@ class TestRunnerParsesWrappedOutput:
         from unittest.mock import AsyncMock
         from agent.nodes.runner import run_benchmarks_node
 
-        batch_result = [{
-            "id": 0,
+        modal_output = {
             "stdout": json.dumps({
                 "function": "process_data",
                 "avg_time_ms": 12.5,
@@ -320,8 +319,8 @@ class TestRunnerParsesWrappedOutput:
             }) + "\n",
             "stderr": "",
             "error": None,
-        }]
-        with patch("agent.nodes.runner.run_benchmarks_batch", new_callable=AsyncMock, return_value=batch_result):
+        }
+        with patch("agent.nodes.runner.run_benchmark", new_callable=AsyncMock, return_value=modal_output):
             result = await run_benchmarks_node(self._make_state())
 
         r = result["initial_results"][0]
@@ -332,13 +331,12 @@ class TestRunnerParsesWrappedOutput:
         from unittest.mock import AsyncMock
         from agent.nodes.runner import run_benchmarks_node
 
-        batch_result = [{
-            "id": 0,
+        modal_output = {
             "stdout": "",
             "stderr": "ModuleNotFoundError",
             "error": "Exit code 1: ModuleNotFoundError",
-        }]
-        with patch("agent.nodes.runner.run_benchmarks_batch", new_callable=AsyncMock, return_value=batch_result):
+        }
+        with patch("agent.nodes.runner.run_benchmark", new_callable=AsyncMock, return_value=modal_output):
             result = await run_benchmarks_node(self._make_state())
 
         r = result["initial_results"][0]
@@ -348,8 +346,7 @@ class TestRunnerParsesWrappedOutput:
         from unittest.mock import AsyncMock
         from agent.nodes.runner import run_benchmarks_node
 
-        batch_result = [{
-            "id": 0,
+        modal_output = {
             "stdout": "Loading data...\nProcessing...\n" + json.dumps({
                 "function": "process_data",
                 "avg_time_ms": 8.0,
@@ -358,8 +355,8 @@ class TestRunnerParsesWrappedOutput:
             }) + "\n",
             "stderr": "",
             "error": None,
-        }]
-        with patch("agent.nodes.runner.run_benchmarks_batch", new_callable=AsyncMock, return_value=batch_result):
+        }
+        with patch("agent.nodes.runner.run_benchmark", new_callable=AsyncMock, return_value=modal_output):
             result = await run_benchmarks_node(self._make_state())
 
         r = result["initial_results"][0]

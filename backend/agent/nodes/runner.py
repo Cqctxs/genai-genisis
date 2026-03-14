@@ -361,29 +361,11 @@ async def run_benchmarks_node(state: AgentState) -> dict:
 
     ast_map = state.get("ast_map", {})
 
-    batch_payload = [
-        {"id": i, "code": bench.script_content, "language": bench.language}
+    tasks = [
+        _execute_single_benchmark(bench, i, repo_files, ast_map=ast_map or None)
         for i, bench in enumerate(benchmarks)
     ]
-    batch_outputs = await run_benchmarks_batch(batch_payload, repo_files)
-
-    results: list[dict] = []
-    failed: list[tuple[int, BenchmarkScript, str, dict]] = []
-    for i, (bench, output) in enumerate(zip(benchmarks, batch_outputs)):
-        result, error_desc = _parse_benchmark_output(bench, output)
-        results.append(result)
-        if _is_failed_result(result) and ast_map:
-            failed.append((i, bench, error_desc or "Unknown failure", output))
-
-    if failed:
-        log.info("batch_retrying_failures", count=len(failed))
-        retry_tasks = [
-            _execute_single_benchmark(bench, idx, repo_files, ast_map=ast_map)
-            for idx, bench, _, _ in failed
-        ]
-        retry_results = await asyncio.gather(*retry_tasks)
-        for (idx, _, _, _), retry_result in zip(failed, retry_results):
-            results[idx] = retry_result
+    results = list(await asyncio.gather(*tasks))
 
     total_time = sum(r["avg_time_ms"] for r in results)
     log.info(
