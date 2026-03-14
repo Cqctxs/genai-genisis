@@ -3,9 +3,10 @@ import json
 
 import structlog
 
-from agent.schemas import AnalysisResult, BenchmarkScript, Hotspot, TriageChunk, TriageResult
+from agent.schemas import AnalysisResult, BenchmarkBatch, BenchmarkScript, Hotspot, TriageChunk, TriageResult
 from agent.state import AgentState
-from services.gemini_service import GEMINI_FLASH, GEMINI_PRO, get_agent, run_agent_logged
+from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
+from services.log_utils import log_block
 from services.github_service import get_file_tree, read_file
 from services.parser_service import parse_repo
 
@@ -47,8 +48,8 @@ Your job is to identify performance bottlenecks. Look for:
 
 Return a structured analysis with specific hotspots, their severity, and reasoning."""
 
-BENCHMARK_PROMPT = """You are a benchmarking expert. Given an analysis of a performance bottleneck
-in a codebase, generate a profiling script that measures the performance of the identified hotspot.
+BENCHMARK_PROMPT = """You are a benchmarking expert. Given one or more performance bottlenecks
+in a codebase, generate a separate self-contained profiling script for EACH hotspot.
 
 CRITICAL SANDBOX CONSTRAINTS:
 - The sandbox has NO external packages installed (no npm packages, no pip packages except pyinstrument/memory_profiler)
@@ -137,7 +138,7 @@ async def _analyze_chunk(
     repo_path: str,
     language: str,
 ) -> list[Hotspot]:
-    """Analyze a single chunk with Gemini Pro. Returns hotspots for this chunk."""
+    """Analyze a single chunk with Gemini Flash. Returns hotspots for this chunk."""
     chunk_files = {}
     for f in chunk.files:
         try:
@@ -159,7 +160,7 @@ async def _analyze_chunk(
         "call_edges": ast_map.get("call_edges", []),
     }
 
-    agent = get_agent(AnalysisResult, ANALYSIS_PROMPT, GEMINI_PRO)
+    agent = get_agent(AnalysisResult, ANALYSIS_PROMPT, GEMINI_FLASH)
 
     prompt = f"""## Chunk: {chunk.label} (Priority: {chunk.priority})
 Triage reasoning: {chunk.reasoning}
@@ -190,51 +191,68 @@ Triage reasoning: {chunk.reasoning}
         return []
 
 
-async def _generate_single_benchmark(
-    hotspot: Hotspot, language: str, ast_map: dict, index: int
-) -> BenchmarkScript | None:
-    """Generate a benchmark script for a single hotspot using Flash."""
-    agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_FLASH)
+BENCHMARK_BATCH_SIZE = 4
 
-    filtered_ast = {
-        "functions": [f for f in ast_map.get("functions", []) if f.get("file") == hotspot.file],
-        "classes": [c for c in ast_map.get("classes", []) if c.get("file") == hotspot.file],
-        "imports": [i for i in ast_map.get("imports", []) if i.get("file") == hotspot.file],
-    }
 
-    prompt = f"""## Hotspot
-- Function: {hotspot.function_name}
-- File: {hotspot.file}
-- Severity: {hotspot.severity}
-- Category: {hotspot.category}
-- Reasoning: {hotspot.reasoning}
+async def _generate_benchmark_batch(
+    hotspots: list[Hotspot],
+    language: str,
+    ast_map: dict,
+    batch_index: int,
+) -> list[BenchmarkScript]:
+    """Generate benchmark scripts for a batch of hotspots in a single API call."""
+    agent = get_agent(BenchmarkBatch, BENCHMARK_PROMPT, GEMINI_FLASH)
 
-## AST Context (functions in this file)
-```json
-{json.dumps(filtered_ast, indent=2)[:3000]}
-```
+    hotspot_sections = []
+    for idx, hotspot in enumerate(hotspots):
+        filtered_ast = {
+            "functions": [f for f in ast_map.get("functions", []) if f.get("file") == hotspot.file],
+            "classes": [c for c in ast_map.get("classes", []) if c.get("file") == hotspot.file],
+            "imports": [imp for imp in ast_map.get("imports", []) if imp.get("file") == hotspot.file],
+        }
+        hotspot_sections.append(
+            f"### Hotspot {idx + 1}\n"
+            f"- Function: {hotspot.function_name}\n"
+            f"- File: {hotspot.file}\n"
+            f"- Severity: {hotspot.severity}\n"
+            f"- Category: {hotspot.category}\n"
+            f"- Reasoning: {hotspot.reasoning}\n\n"
+            f"#### AST Context\n```json\n{json.dumps(filtered_ast, indent=2)[:3000]}\n```"
+        )
 
-Generate a profiling script for this hotspot. The language is: {language}"""
+    prompt = (
+        f"Generate a profiling script for EACH of the following {len(hotspots)} hotspot(s).\n"
+        f"Return exactly {len(hotspots)} BenchmarkScript object(s) in the `scripts` list.\n\n"
+        f"The language is: {language}\n\n"
+        + "\n\n".join(hotspot_sections)
+    )
 
     try:
-        result = await run_agent_logged(agent, prompt, node_name=f"gen_bench_{index}")
-        bench: BenchmarkScript = result.output  # type: ignore[assignment]
+        result = await run_agent_logged(agent, prompt, node_name=f"gen_bench_batch_{batch_index}")
+        batch: BenchmarkBatch = result.output  # type: ignore[assignment]
         log.info(
-            "benchmark_script_generated",
-            index=index,
-            target=bench.target_function,
-            file=bench.file,
-            language=bench.language,
-            script_chars=len(bench.script_content),
+            "benchmark_batch_generated",
+            batch_index=batch_index,
+            requested=len(hotspots),
+            generated=len(batch.scripts),
         )
-        return bench
+        for script in batch.scripts:
+            log.debug(
+                "benchmark_script_generated",
+                batch_index=batch_index,
+                target=script.target_function,
+                file=script.file,
+                language=script.language,
+                script_chars=len(script.script_content),
+            )
+        return batch.scripts
     except Exception as e:
-        log.error("benchmark_generation_failed", hotspot=hotspot.function_name, error=str(e))
-        return None
+        log.error("benchmark_batch_failed", batch_index=batch_index, error=str(e))
+        return []
 
 
 async def chunk_analyze_node(state: AgentState) -> dict:
-    """Analyze chunks in parallel (Pro), then generate benchmarks in parallel (Flash)."""
+    """Analyze chunks in parallel (Flash), then generate benchmarks in batches (Flash)."""
     triage_data = state.get("triage_result", {})
     triage = TriageResult(**triage_data)
     ast_map = state.get("ast_map", {})
@@ -249,7 +267,7 @@ async def chunk_analyze_node(state: AgentState) -> dict:
         chunk_labels=[c.label for c in chunks],
     )
 
-    # Phase 1: Analyze all chunks in parallel (Pro)
+    # Phase 1: Analyze all chunks in parallel (Flash)
     analysis_tasks = [
         _analyze_chunk(chunk, ast_map, repo_path, triage.language)
         for chunk in chunks
@@ -280,18 +298,42 @@ async def chunk_analyze_node(state: AgentState) -> dict:
 
     log.info("chunk_analyze_complete", language=triage.language, hotspots=len(all_hotspots))
 
-    # Phase 2: Generate benchmarks for all hotspots in parallel (Flash)
-    log.info("benchmark_generation_start", num_hotspots=len(all_hotspots))
-
-    bench_tasks = [
-        _generate_single_benchmark(hotspot, triage.language, ast_map, i)
-        for i, hotspot in enumerate(all_hotspots)
+    # Phase 2: Generate benchmarks in batches (Flash) — fewer API calls
+    batches = [
+        all_hotspots[i:i + BENCHMARK_BATCH_SIZE]
+        for i in range(0, len(all_hotspots), BENCHMARK_BATCH_SIZE)
     ]
-    bench_results = await asyncio.gather(*bench_tasks)
+    log.info(
+        "benchmark_generation_start",
+        num_hotspots=len(all_hotspots),
+        num_batches=len(batches),
+        batch_sizes=[len(b) for b in batches],
+    )
 
-    benchmarks = [b.model_dump() for b in bench_results if b is not None]
+    batch_tasks = [
+        _generate_benchmark_batch(batch, triage.language, ast_map, i)
+        for i, batch in enumerate(batches)
+    ]
+    batch_results = await asyncio.gather(*batch_tasks)
+
+    benchmarks = []
+    for script_list in batch_results:
+        benchmarks.extend([s.model_dump() for s in script_list])
 
     log.info("benchmark_generation_complete", count=len(benchmarks))
+
+    log_block(
+        "CHUNK ANALYZE SUMMARY",
+        metadata={
+            "analysis_model": GEMINI_FLASH,
+            "chunks_analyzed": len(chunks),
+            "hotspots_found": len(all_hotspots),
+            "benchmark_batches": len(batches),
+            "benchmark_scripts": len(benchmarks),
+            "api_calls_saved": max(0, len(all_hotspots) - len(batches)),
+        },
+        color="cyan",
+    )
 
     analysis = AnalysisResult(
         language=triage.language,

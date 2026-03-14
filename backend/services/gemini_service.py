@@ -65,9 +65,8 @@ async def run_agent_logged(
     model_settings: GoogleModelSettings | None = None,
 ) -> AgentRunResult:
     """Run a PydanticAI agent with detailed logging of inputs and outputs."""
-    model_name = str(getattr(agent, "model", "unknown"))
     system_prompt = getattr(agent, "_codemark_system_prompt", "<unavailable>")
-    model_str = getattr(agent, '_model_str', '')
+    model_str = getattr(agent, '_model_str', 'unknown')
     output_type = getattr(agent, "_codemark_output_type", "unknown")
 
     # Default to PRO_SETTINGS for Pro model calls
@@ -81,17 +80,15 @@ async def run_agent_logged(
     log_block(
         f"GEMINI REQUEST [{node_name}]",
         metadata={
-            "model": model_name,
-            "model_str": model_str,
+            "model": model_str,
             "output_type": output_type,
             "prompt_chars": len(prompt),
             "is_pro": model_str == GEMINI_PRO,
-            "settings_applied": settings is not None,
             "thinking_level": repr(thinking_level),
         },
         sections={
-            "SYSTEM PROMPT": system_prompt[:500],
-            "USER PROMPT": prompt[:500],
+            "SYSTEM PROMPT": system_prompt,
+            "USER PROMPT": prompt,
         },
         color="blue",
     )
@@ -104,7 +101,7 @@ async def run_agent_logged(
         log_block(
             f"GEMINI ERROR [{node_name}]",
             metadata={
-                "model": model_name,
+                "model": model_str,
                 "error_type": type(e).__name__,
                 "elapsed_s": round(elapsed, 2),
             },
@@ -120,13 +117,14 @@ async def run_agent_logged(
     log_block(
         f"GEMINI RESPONSE [{node_name}]",
         metadata={
-            "model": model_name,
+            "model": model_str,
             "output_type": type(output).__name__,
             "elapsed_s": round(elapsed, 2),
             "response_chars": len(formatted),
         },
         sections={"RESPONSE": formatted},
         color="green",
+        max_section_chars=1000,
     )
 
     return result

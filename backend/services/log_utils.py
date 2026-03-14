@@ -16,6 +16,7 @@ def log_block(
     sections: dict[str, str] | None = None,
     metadata: dict[str, str | int | float | bool | None] | None = None,
     color: str = "blue",
+    max_section_chars: int | None = 500,
 ) -> None:
     """Print a visually distinct log block to stderr.
 
@@ -24,6 +25,7 @@ def log_block(
         sections: Named text blocks to print (e.g. {"SYSTEM PROMPT": "...", "USER PROMPT": "..."}).
         metadata: Key-value pairs shown as a compact header below the banner.
         color: ANSI color name for the banner — "blue", "green", "yellow", "magenta", "cyan".
+        max_section_chars: Truncate section content to this length. None disables truncation.
     """
     ansi = {
         "blue": "\033[94m",
@@ -51,6 +53,9 @@ def log_block(
 
     if sections:
         for section_title, content in sections.items():
+            if max_section_chars and len(content) > max_section_chars:
+                total = len(content)
+                content = content[:max_section_chars] + f"\n... ({total} chars total, truncated)"
             section_header = f" {section_title} "
             lines.append(f"{dim}{section_header:─^90}{reset}")
             lines.append(content)

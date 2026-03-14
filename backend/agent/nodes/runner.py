@@ -51,11 +51,11 @@ async def _execute_single_benchmark(
 
         stdout = output.get("stdout", "")
         stderr = output.get("stderr", "")
-        log.info(
+        log.debug(
             "benchmark_raw_output",
             target=bench.target_function,
-            stdout=stdout[:500],
-            stderr=stderr[:500] if stderr else None,
+            stdout_chars=len(stdout),
+            stderr_chars=len(stderr),
         )
 
         if not stdout.strip():
@@ -108,12 +108,13 @@ async def _execute_single_benchmark(
             ).model_dump()
 
     except Exception as e:
+        tb = traceback.format_exc()
         log.error(
             "benchmark_execution_crashed",
             target=bench.target_function,
             error_type=type(e).__name__,
-            error=str(e),
-            traceback=traceback.format_exc(),
+            error=str(e)[:300],
+            traceback=tb[-500:] if len(tb) > 500 else tb,
         )
         return BenchmarkResult(
             function_name=bench.target_function,
@@ -167,13 +168,15 @@ async def run_benchmarks_node(state: AgentState) -> dict:
     ]
     results = list(await asyncio.gather(*tasks))
 
+    total_time = sum(r["avg_time_ms"] for r in results)
     log.info(
         "run_benchmarks_complete",
         results_key=results_key,
         count=len(results),
+        total_time_ms=round(total_time, 1),
         summary=[
-            {"fn": r["function_name"], "time_ms": r["avg_time_ms"], "mem_mb": r["memory_peak_mb"]}
-            for r in results
+            {"fn": r["function_name"], "time_ms": r["avg_time_ms"]}
+            for r in results[:5]
         ],
     )
 

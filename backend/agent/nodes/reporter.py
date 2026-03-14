@@ -38,14 +38,8 @@ async def report_node(state: AgentState) -> dict:
         "report_start",
         initial_results_count=len(initial_results),
         final_results_count=len(final_results),
-        initial_summary=[
-            {"fn": r.get("function_name"), "time_ms": r.get("avg_time_ms"), "mem_mb": r.get("memory_peak_mb")}
-            for r in initial_results
-        ],
-        final_summary=[
-            {"fn": r.get("function_name"), "time_ms": r.get("avg_time_ms"), "mem_mb": r.get("memory_peak_mb")}
-            for r in final_results
-        ],
+        initial_total_ms=round(sum(r.get("avg_time_ms", 0) for r in initial_results), 1),
+        final_total_ms=round(sum(r.get("avg_time_ms", 0) for r in final_results), 1),
     )
 
     sandbox_specs = await get_sandbox_specs()
@@ -82,15 +76,13 @@ Calculate the CodeMark score and generate the full comparison report."""
         summary=report.summary[:200],
     )
 
-    for fn in report.functions:
+    if report.functions:
+        best = max(report.functions, key=lambda f: f.speedup_factor)
         log.info(
-            "function_comparison",
-            function=fn.function_name,
-            file=fn.file,
-            old_time_ms=fn.old_time_ms,
-            new_time_ms=fn.new_time_ms,
-            speedup=fn.speedup_factor,
-            memory_reduction_pct=fn.memory_reduction_pct,
+            "report_functions_summary",
+            functions_compared=len(report.functions),
+            best_speedup=f"{best.function_name} ({best.speedup_factor:.1f}x)",
+            avg_speedup=round(sum(f.speedup_factor for f in report.functions) / len(report.functions), 2),
         )
 
     return {

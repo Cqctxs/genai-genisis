@@ -14,6 +14,7 @@ from agent.nodes.visualizer import visualize_node
 from agent.state import AgentState
 from services.github_pr_service import create_optimization_pr
 from services.github_service import cleanup_repo, clone_repo
+from services.log_utils import log_block
 
 log = structlog.get_logger()
 
@@ -174,7 +175,8 @@ async def create_pr_node(state: AgentState) -> dict:
             pr_status = "failed"
             pr_error = f"Failed to create pull request: {e}"
 
-        log.error("create_pr_failed", error=str(e), pr_status=pr_status, traceback=traceback.format_exc())
+        tb = traceback.format_exc()
+        log.error("create_pr_failed", error=str(e)[:300], pr_status=pr_status, traceback=tb[-500:] if len(tb) > 500 else tb)
         return {
             **state,
             "pr_url": "",
@@ -265,14 +267,35 @@ async def run_optimization_pipeline(
             final_state.update(state_update)
 
     total_elapsed = time.monotonic() - pipeline_start
-    log.info("pipeline_complete", total_elapsed_s=round(total_elapsed, 1))
+
+    initial_results = final_state.get("initial_results", [])
+    final_results = final_state.get("final_results", [])
+    initial_total = sum(r.get("avg_time_ms", 0) for r in initial_results)
+    final_total = sum(r.get("avg_time_ms", 0) for r in final_results)
+    comparison = final_state.get("comparison", {})
+    score = comparison.get("benchy_score", {})
+
+    log_block(
+        "PIPELINE COMPLETE",
+        metadata={
+            "total_time_s": round(total_elapsed, 1),
+            "hotspots_found": len(final_state.get("analysis", {}).get("hotspots", [])),
+            "files_optimized": len(final_state.get("optimized_files", {})),
+            "benchmarks_before_ms": round(initial_total, 1),
+            "benchmarks_after_ms": round(final_total, 1),
+            "score_before": score.get("overall_before", "N/A"),
+            "score_after": score.get("overall_after", "N/A"),
+            "pr_url": final_state.get("pr_url", ""),
+        },
+        color="magenta",
+    )
 
     result = {
         "graph_data": final_state.get("graph_data", {}),
-        "comparison": final_state.get("comparison", {}),
+        "comparison": comparison,
         "optimized_files": final_state.get("optimized_files", {}),
-        "initial_results": final_state.get("initial_results", []),
-        "final_results": final_state.get("final_results", []),
+        "initial_results": initial_results,
+        "final_results": final_results,
         "analysis": final_state.get("analysis", {}),
         "pr_url": final_state.get("pr_url", ""),
     }

@@ -51,20 +51,16 @@ Generate the React Flow graph data."""
     result = await run_agent_logged(agent, prompt, node_name="visualize")
     graph_data: GraphData = result.output  # type: ignore[assignment]
 
+    severity_counts = {}
     for node in graph_data.nodes:
-        log.info(
-            "graph_node",
-            id=node.id,
-            label=node.label,
-            file=node.file,
-            avg_time_ms=node.avg_time_ms,
-            severity=node.severity,
-        )
+        sev = node.severity or "none"
+        severity_counts[sev] = severity_counts.get(sev, 0) + 1
 
     log.info(
         "visualize_complete",
         nodes=len(graph_data.nodes),
         edges=len(graph_data.edges),
+        severity_breakdown=severity_counts,
     )
 
     return {

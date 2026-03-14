@@ -73,6 +73,10 @@ class BenchmarkScript(BaseModel):
     description: str
 
 
+class BenchmarkBatch(BaseModel):
+    scripts: list[BenchmarkScript]
+
+
 class BenchmarkResult(BaseModel):
     function_name: str
     file: str
