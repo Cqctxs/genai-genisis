@@ -5,16 +5,54 @@ import traceback
 import modal
 
 BENCHMARK_TIMEOUT = 60
-DEP_INSTALL_TIMEOUT = 120
-FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + DEP_INSTALL_TIMEOUT + 30  # headroom
+FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + 30
 
 app = modal.App("codemark-benchmarks")
 
-python_image = modal.Image.debian_slim(python_version="3.12").pip_install(
-    "pyinstrument", "memory_profiler", "time", "json"
+python_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install(
+        "pyinstrument",
+        "memory_profiler",
+        "numpy",
+        "pandas",
+        "requests",
+        "aiohttp",
+        "pydantic",
+        "sqlalchemy",
+        "fastapi",
+        "flask",
+        "django",
+        "celery",
+        "redis",
+        "httpx",
+        "beautifulsoup4",
+        "lxml",
+        "pillow",
+        "scipy",
+        "scikit-learn",
+        "pytest",
+    )
 )
 
-node_image = modal.Image.debian_slim().apt_install("nodejs", "npm")
+node_image = (
+    modal.Image.debian_slim()
+    .apt_install("nodejs", "npm")
+    .run_commands(
+        "npm install -g "
+        "lodash express react react-dom next "
+        "axios framer-motion zod "
+        "typescript ts-node "
+        "jest mocha chai "
+        "mongoose pg knex sequelize prisma "
+        "socket.io ws "
+        "jsonwebtoken bcrypt uuid "
+        "dayjs moment date-fns "
+        "cheerio node-fetch "
+        "@tanstack/react-query swr"
+    )
+    .env({"NODE_PATH": "/usr/local/lib/node_modules"})
+)
 
 # ---------------------------------------------------------------------------
 # Memory measurement wrappers
@@ -153,44 +191,6 @@ def _write_repo_files(workdir: str, repo_files: dict[str, str]) -> None:
             f.write(content)
 
 
-def _install_python_deps(workdir: str) -> str:
-    """Install Python dependencies from requirements.txt. Returns install stderr."""
-    import os
-    import subprocess
-
-    req_path = os.path.join(workdir, "requirements.txt")
-    if not os.path.exists(req_path):
-        return ""
-
-    result = subprocess.run(
-        ["pip", "install", "-r", req_path, "--quiet", "--no-cache-dir"],
-        capture_output=True,
-        text=True,
-        timeout=DEP_INSTALL_TIMEOUT,
-        cwd=workdir,
-    )
-    return result.stderr
-
-
-def _install_js_deps(workdir: str) -> str:
-    """Install Node.js dependencies from package.json. Returns install stderr."""
-    import os
-    import subprocess
-
-    pkg_path = os.path.join(workdir, "package.json")
-    if os.path.exists(pkg_path):
-        result = subprocess.run(
-            ["npm", "install", "--production", "--no-audit", "--no-fund"],
-            capture_output=True,
-            text=True,
-            timeout=DEP_INSTALL_TIMEOUT,
-            cwd=workdir,
-        )
-        return result.stderr
-
-    return ""
-
-
 @app.function(image=python_image, timeout=FUNCTION_TIMEOUT)
 def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     import subprocess
@@ -199,7 +199,6 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
 
     workdir = tempfile.mkdtemp()
     _write_repo_files(workdir, repo_files)
-    dep_stderr = _install_python_deps(workdir)
 
     with open(os.path.join(workdir, "_benchmark_inner.py"), "w") as f:
         f.write(code)
@@ -215,14 +214,10 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
         cwd=workdir,
     )
 
-    stderr = result.stderr
-    if dep_stderr and result.returncode != 0:
-        stderr = f"[pip install output]\n{dep_stderr}\n\n[benchmark stderr]\n{stderr}"
-
     return {
         "stdout": result.stdout,
-        "stderr": stderr,
-        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {stderr[-500:]}",
+        "stderr": result.stderr,
+        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {result.stderr[-500:]}",
     }
 
 
@@ -234,7 +229,6 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
 
     workdir = tempfile.mkdtemp()
     _write_repo_files(workdir, repo_files)
-    dep_stderr = _install_js_deps(workdir)
 
     with open(os.path.join(workdir, "_benchmark_inner.js"), "w") as f:
         f.write(_esm_to_cjs(code))
@@ -250,14 +244,10 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
         cwd=workdir,
     )
 
-    stderr = result.stderr
-    if dep_stderr and result.returncode != 0:
-        stderr = f"[npm install output]\n{dep_stderr}\n\n[benchmark stderr]\n{stderr}"
-
     return {
         "stdout": result.stdout,
-        "stderr": stderr,
-        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {stderr[-500:]}",
+        "stderr": result.stderr,
+        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {result.stderr[-500:]}",
     }
 
 

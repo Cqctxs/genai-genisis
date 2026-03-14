@@ -52,12 +52,21 @@ BENCHMARK_PROMPT = """You are a benchmarking expert. Given one or more performan
 in a codebase, generate a separate self-contained profiling script for EACH hotspot.
 
 CRITICAL SANDBOX CONSTRAINTS:
-- The sandbox has NO external packages installed (no npm packages, no pip packages except pyinstrument/memory_profiler)
-- For JavaScript: Do NOT require/import any external libraries (no react, lodash, express, etc.)
-- You MUST inline or mock any external dependencies
-- Only use Node.js built-in modules (fs, path, crypto, http, etc.)
-- Copy the target function's source code directly into the benchmark script
-- Create mock/stub data instead of importing real modules
+- The sandbox has common packages pre-installed (see list below), but you should
+  STILL prefer inlining or mocking over importing when the dependency isn't essential
+  to measuring the hotspot's algorithmic performance.
+- Pre-installed Python packages: numpy, pandas, requests, aiohttp, pydantic, sqlalchemy,
+  fastapi, flask, django, celery, redis, httpx, beautifulsoup4, lxml, pillow, scipy,
+  scikit-learn, pytest, pyinstrument, memory_profiler.
+- Pre-installed Node.js packages (available via require()): lodash, express, react,
+  react-dom, next, axios, framer-motion, zod, typescript, ts-node, jest, mocha, chai,
+  mongoose, pg, knex, sequelize, prisma, socket.io, ws, jsonwebtoken, bcrypt, uuid,
+  dayjs, moment, date-fns, cheerio, node-fetch, @tanstack/react-query, swr.
+- If a dependency is NOT in the pre-installed list above, you MUST mock/stub it.
+  Do NOT run `npm install`, `pip install`, or any package manager commands in the script.
+  Doing so will crash the container.
+- Copy the target function's source code directly into the benchmark script.
+- Create mock/stub data instead of importing real modules when measuring pure logic.
 
 INPUT SIZE — THIS IS CRITICAL:
 - Use input sizes large enough to reveal algorithmic complexity differences.

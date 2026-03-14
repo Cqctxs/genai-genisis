@@ -1,12 +1,13 @@
 import asyncio
 import json
+import os
 import time
 import traceback
 
+import railtracks as rt
 import structlog
-from langgraph.graph import END, StateGraph
 
-from agent.nodes.analyzer import parse_ast_node, triage_node, chunk_analyze_node
+from agent.nodes.analyzer import chunk_analyze_node, parse_ast_node, triage_node
 from agent.nodes.optimizer import optimize_node
 from agent.nodes.reporter import report_node
 from agent.nodes.runner import run_benchmarks_node
@@ -19,82 +20,6 @@ from services.log_utils import log_block
 log = structlog.get_logger()
 
 MAX_OPTIMIZATION_RETRIES = 2
-
-
-async def clone_node(state: AgentState) -> dict:
-    """Clone the repository."""
-    repo_url = state.get("repo_url", "")
-    log.info("clone_start", repo_url=repo_url)
-    repo_path = await clone_repo(repo_url, state.get("github_token", ""))
-    log.info("clone_complete", repo_path=repo_path)
-    return {
-        **state,
-        "repo_path": repo_path,
-        "messages": ["Repository cloned successfully"],
-    }
-
-
-async def visualize_and_optimize_node(state: AgentState) -> dict:
-    """Run visualization and optimization in parallel after benchmarks."""
-    log.info("visualize_and_optimize_start")
-
-    viz_task = visualize_node(state)
-    opt_task = optimize_node(state)
-
-    viz_result, opt_result = await asyncio.gather(viz_task, opt_task)
-
-    log.info("visualize_and_optimize_complete")
-
-    base_msgs = state.get("messages", [])
-    base_count = len(base_msgs)
-    new_viz_msgs = viz_result.get("messages", [])[base_count:]
-    new_opt_msgs = opt_result.get("messages", [])[base_count:]
-
-    return {
-        **state,
-        "graph_data": viz_result.get("graph_data", {}),
-        "optimized_files": opt_result.get("optimized_files", {}),
-        "messages": base_msgs + new_viz_msgs + new_opt_msgs,
-    }
-
-
-async def rerun_benchmarks_node(state: AgentState) -> dict:
-    """Re-run benchmarks on optimized code. Writes optimized files to repo first."""
-    import os
-    repo_path = state.get("repo_path", "")
-    optimized_files = state.get("optimized_files", {})
-
-    log.info("rerun_benchmarks_start", num_optimized_files=len(optimized_files))
-
-    # Snapshot original file contents before the first overwrite so we can
-    # revert individual files that fail the correctness check.
-    original_files = state.get("original_files", {})
-    if not original_files:
-        for rel_path in optimized_files:
-            full_path = os.path.join(repo_path, rel_path)
-            if os.path.exists(full_path):
-                with open(full_path, "r", encoding="utf-8") as f:
-                    original_files[rel_path] = f.read()
-
-    for rel_path, content in optimized_files.items():
-        full_path = os.path.join(repo_path, rel_path)
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        with open(full_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        log.info("rerun_wrote_optimized_file", path=rel_path, chars=len(content))
-
-    result = await run_benchmarks_node({**state, "initial_results": state.get("initial_results", [])})
-
-    log.info("rerun_benchmarks_complete")
-
-    return {
-        **state,
-        "original_files": original_files,
-        "final_results": result.get("final_results", result.get("initial_results", [])),
-        "correctness_failures": result.get("correctness_failures", []),
-        "retry_count": state.get("retry_count", 0) + 1,
-        "messages": state.get("messages", []) + ["Re-ran benchmarks on optimized code"],
-    }
 
 
 def _revert_broken_files(state: AgentState) -> dict[str, str]:
@@ -118,11 +43,10 @@ def _revert_broken_files(state: AgentState) -> dict[str, str]:
     return optimized_files
 
 
-def should_retry(state: AgentState) -> str:
-    """Decide whether to retry optimization or finalize.
+def _should_stop_retrying(state: AgentState) -> tuple[bool, str]:
+    """Decide whether to stop retrying and proceed to report.
 
-    Correctness failures always trigger a retry (up to max retries).
-    On the final retry, broken files are reverted to originals.
+    Returns (should_stop, reason).
     """
     initial = state.get("initial_results", [])
     final = state.get("final_results", [])
@@ -132,58 +56,70 @@ def should_retry(state: AgentState) -> str:
     initial_total = sum(r.get("avg_time_ms", 0) for r in initial)
     final_total = sum(r.get("avg_time_ms", 0) for r in final)
 
-    decision = "report"
-    reason = ""
-
     if correctness_failures and retry_count < MAX_OPTIMIZATION_RETRIES:
         failed_fns = [f["function_name"] for f in correctness_failures]
-        decision = "optimize"
-        reason = f"correctness failures in {failed_fns}, retrying optimization"
-    elif correctness_failures and retry_count >= MAX_OPTIMIZATION_RETRIES:
-        reason = f"correctness failures remain after max retries, reverting broken files"
-    elif retry_count >= MAX_OPTIMIZATION_RETRIES:
-        reason = f"max retries reached ({retry_count})"
-    elif not initial or not final:
-        reason = f"missing results (initial={len(initial)}, final={len(final)})"
-    elif initial_total == 0 and final_total == 0:
-        reason = "all benchmarks returned 0ms (likely sandbox failures), skipping retry"
-    elif initial_total > 0 and final_total < initial_total:
-        reason = f"improvement detected ({initial_total:.1f}ms -> {final_total:.1f}ms)"
-    elif initial_total > 0 and abs(final_total - initial_total) / initial_total < 0.05:
-        reason = f"marginal difference ({initial_total:.1f}ms -> {final_total:.1f}ms, <5%), not worth retrying"
-    else:
-        decision = "optimize"
-        reason = f"no improvement ({initial_total:.1f}ms -> {final_total:.1f}ms), retrying"
+        return False, f"correctness failures in {failed_fns}, retrying optimization"
 
-    log.info(
-        "should_retry_decision",
-        decision=decision,
-        reason=reason,
-        retry_count=retry_count,
-        initial_total_ms=initial_total,
-        final_total_ms=final_total,
-        correctness_failures=len(correctness_failures),
+    if correctness_failures and retry_count >= MAX_OPTIMIZATION_RETRIES:
+        return True, "correctness failures remain after max retries, reverting broken files"
+
+    if retry_count >= MAX_OPTIMIZATION_RETRIES:
+        return True, f"max retries reached ({retry_count})"
+
+    if not initial or not final:
+        return True, f"missing results (initial={len(initial)}, final={len(final)})"
+
+    if initial_total == 0 and final_total == 0:
+        return True, "all benchmarks returned 0ms (likely sandbox failures), skipping retry"
+
+    if initial_total > 0 and final_total < initial_total:
+        return True, f"improvement detected ({initial_total:.1f}ms -> {final_total:.1f}ms)"
+
+    if initial_total > 0 and abs(final_total - initial_total) / initial_total < 0.05:
+        return True, f"marginal difference ({initial_total:.1f}ms -> {final_total:.1f}ms, <5%), not worth retrying"
+
+    return False, f"no improvement ({initial_total:.1f}ms -> {final_total:.1f}ms), retrying"
+
+
+async def _rerun_benchmarks(state: AgentState) -> dict:
+    """Write optimized files to disk and re-run benchmarks."""
+    repo_path = state.get("repo_path", "")
+    optimized_files = state.get("optimized_files", {})
+
+    log.info("rerun_benchmarks_start", num_optimized_files=len(optimized_files))
+
+    original_files = dict(state.get("original_files", {}))
+    if not original_files:
+        for rel_path in optimized_files:
+            full_path = os.path.join(repo_path, rel_path)
+            if os.path.exists(full_path):
+                with open(full_path, "r", encoding="utf-8") as f:
+                    original_files[rel_path] = f.read()
+
+    for rel_path, content in optimized_files.items():
+        full_path = os.path.join(repo_path, rel_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        log.info("rerun_wrote_optimized_file", path=rel_path, chars=len(content))
+
+    result = await run_benchmarks_node(
+        {**state, "initial_results": state.get("initial_results", [])}
     )
 
-    # If we're done retrying but still have correctness failures, revert broken files
-    if decision == "report" and correctness_failures:
-        reverted = _revert_broken_files(state)
-        state["optimized_files"] = reverted  # type: ignore[typeddict-unknown-key]
+    log.info("rerun_benchmarks_complete")
 
-    return decision
-
-
-async def cleanup_node(state: AgentState) -> dict:
-    """Clean up cloned repo."""
-    repo_path = state.get("repo_path", "")
-    if repo_path:
-        await asyncio.to_thread(cleanup_repo, repo_path)
-        log.info("cleanup_complete", repo_path=repo_path)
-    return {}
+    return {
+        "original_files": original_files,
+        "final_results": result.get("final_results", result.get("initial_results", [])),
+        "correctness_failures": result.get("correctness_failures", []),
+        "retry_count": state.get("retry_count", 0) + 1,
+        "messages": state.get("messages", []) + ["Re-ran benchmarks on optimized code"],
+    }
 
 
-async def create_pr_node(state: AgentState) -> dict:
-    """Create a GitHub PR with the optimized code. Non-fatal on failure."""
+async def _create_pr(state: AgentState) -> dict:
+    """Create a GitHub PR with optimized code. Non-fatal on failure."""
     repo_url = state.get("repo_url", "")
     github_token = state.get("github_token", "")
     optimized_files = state.get("optimized_files", {})
@@ -192,7 +128,6 @@ async def create_pr_node(state: AgentState) -> dict:
     if not optimized_files:
         log.warning("create_pr_skipped", reason="no optimized files")
         return {
-            **state,
             "pr_url": "",
             "pr_status": "skipped",
             "pr_error": "No optimized files to create PR",
@@ -207,7 +142,6 @@ async def create_pr_node(state: AgentState) -> dict:
         )
         log.info("create_pr_complete", pr_url=pr_url)
         return {
-            **state,
             "pr_url": pr_url,
             "pr_status": "success",
             "pr_error": None,
@@ -215,10 +149,10 @@ async def create_pr_node(state: AgentState) -> dict:
         }
     except Exception as e:
         error_str = str(e).lower()
-
-        # Detect permission errors
-        # GitHub returns 404 (not 403) for write operations when token lacks push access
-        if isinstance(e, PermissionError) or "write permission" in error_str or "403" in error_str or "permission" in error_str or "push access" in error_str or "404" in error_str or "not found" in error_str:
+        permission_keywords = (
+            "permission", "403", "404", "not found", "push access", "write permission",
+        )
+        if isinstance(e, PermissionError) or any(kw in error_str for kw in permission_keywords):
             pr_status = "permission_denied"
             pr_error = str(e)
         else:
@@ -226,9 +160,13 @@ async def create_pr_node(state: AgentState) -> dict:
             pr_error = f"Failed to create pull request: {e}"
 
         tb = traceback.format_exc()
-        log.error("create_pr_failed", error=str(e)[:300], pr_status=pr_status, traceback=tb[-500:] if len(tb) > 500 else tb)
+        log.error(
+            "create_pr_failed",
+            error=str(e)[:300],
+            pr_status=pr_status,
+            traceback=tb[-500:] if len(tb) > 500 else tb,
+        )
         return {
-            **state,
             "pr_url": "",
             "pr_status": pr_status,
             "pr_error": pr_error,
@@ -236,42 +174,139 @@ async def create_pr_node(state: AgentState) -> dict:
         }
 
 
-def build_graph() -> StateGraph:
-    """Build the LangGraph optimization pipeline."""
-    graph = StateGraph(AgentState)
+def _extract_result(state: AgentState) -> dict:
+    """Extract the final result payload from the accumulated pipeline state."""
+    initial_results = state.get("initial_results", [])
+    final_results = state.get("final_results", [])
+    comparison = state.get("comparison", {})
 
-    graph.add_node("clone", clone_node)
-    graph.add_node("parse_ast", parse_ast_node)
-    graph.add_node("triage", triage_node)
-    graph.add_node("chunk_analyze", chunk_analyze_node)
-    graph.add_node("run_benchmarks", run_benchmarks_node)
-    graph.add_node("visualize_and_optimize", visualize_and_optimize_node)
-    graph.add_node("optimize", optimize_node)
-    graph.add_node("rerun_benchmarks", rerun_benchmarks_node)
-    graph.add_node("report", report_node)
-    graph.add_node("create_pr", create_pr_node)
-    graph.add_node("cleanup", cleanup_node)
+    initial_total = sum(r.get("avg_time_ms", 0) for r in initial_results)
+    final_total = sum(r.get("avg_time_ms", 0) for r in final_results)
+    score = comparison.get("benchy_score", {})
 
-    graph.set_entry_point("clone")
-    graph.add_edge("clone", "parse_ast")
-    graph.add_edge("parse_ast", "triage")
-    graph.add_edge("triage", "chunk_analyze")
-    graph.add_edge("chunk_analyze", "run_benchmarks")
-    graph.add_edge("run_benchmarks", "visualize_and_optimize")
-    graph.add_edge("visualize_and_optimize", "rerun_benchmarks")
-    graph.add_conditional_edges("rerun_benchmarks", should_retry, {
-        "optimize": "optimize",
-        "report": "report",
-    })
-    graph.add_edge("optimize", "rerun_benchmarks")
-    graph.add_edge("report", "create_pr")
-    graph.add_edge("create_pr", "cleanup")
-    graph.add_edge("cleanup", END)
+    log_block(
+        "PIPELINE COMPLETE",
+        metadata={
+            "hotspots_found": len(state.get("analysis", {}).get("hotspots", [])),
+            "files_optimized": len(state.get("optimized_files", {})),
+            "benchmarks_before_ms": round(initial_total, 1),
+            "benchmarks_after_ms": round(final_total, 1),
+            "score_before": score.get("overall_before", "N/A"),
+            "score_after": score.get("overall_after", "N/A"),
+            "pr_url": state.get("pr_url", ""),
+        },
+        color="magenta",
+    )
 
-    return graph
+    return {
+        "graph_data": state.get("graph_data", {}),
+        "comparison": comparison,
+        "optimized_files": state.get("optimized_files", {}),
+        "initial_results": initial_results,
+        "final_results": final_results,
+        "analysis": state.get("analysis", {}),
+        "pr_url": state.get("pr_url", ""),
+        "pr_status": state.get("pr_status", ""),
+        "pr_error": state.get("pr_error"),
+    }
 
 
-compiled_graph = build_graph().compile()
+@rt.function_node
+async def optimization_pipeline(repo_url: str, github_token: str, optimization_bias: str = "balanced") -> dict:
+    """Main orchestration flow — replaces the LangGraph StateGraph.
+
+    Each stage calls the existing node functions directly (their signatures
+    and internals are unchanged).  The retry loop and conditional routing
+    that was previously expressed as graph edges is now a plain Python
+    for-loop with break.
+    """
+    state: AgentState = {
+        "repo_url": repo_url,
+        "github_token": github_token,
+        "optimization_bias": optimization_bias,
+        "messages": [],
+    }
+
+    # ── Clone ────────────────────────────────────────────────────────────
+    await rt.broadcast("Cloning repository...")
+    log.info("clone_start", repo_url=repo_url)
+    repo_path = await clone_repo(repo_url, github_token)
+    log.info("clone_complete", repo_path=repo_path)
+    state["repo_path"] = repo_path
+    state["messages"].append("Repository cloned successfully")
+
+    # ── Parse AST ────────────────────────────────────────────────────────
+    await rt.broadcast("Parsing codebase AST...")
+    state.update(await parse_ast_node(state))
+
+    # ── Triage ───────────────────────────────────────────────────────────
+    await rt.broadcast("Triaging codebase for hotspots...")
+    state.update(await triage_node(state))
+
+    # ── Deep analysis + benchmark generation ─────────────────────────────
+    await rt.broadcast("Analyzing hotspots and generating benchmarks...")
+    state.update(await chunk_analyze_node(state))
+
+    # ── Initial benchmarks ───────────────────────────────────────────────
+    await rt.broadcast("Running initial benchmarks...")
+    state.update(await run_benchmarks_node(state))
+
+    # ── Parallel: visualize + optimize ───────────────────────────────────
+    await rt.broadcast("Generating visualization and optimizations...")
+    viz_task = visualize_node(state)
+    opt_task = optimize_node(state)
+    viz_result, opt_result = await asyncio.gather(viz_task, opt_task)
+
+    base_msgs = list(state.get("messages", []))
+    base_count = len(base_msgs)
+    new_viz_msgs = viz_result.get("messages", [])[base_count:]
+    new_opt_msgs = opt_result.get("messages", [])[base_count:]
+
+    state["graph_data"] = viz_result.get("graph_data", {})
+    state["optimized_files"] = opt_result.get("optimized_files", {})
+    state["messages"] = base_msgs + new_viz_msgs + new_opt_msgs
+
+    # ── Optimization retry loop ──────────────────────────────────────────
+    # Replaces LangGraph's conditional edges:
+    #   rerun_benchmarks ─┬─▶ optimize  (if retry needed)
+    #                     └─▶ report    (if done)
+    for attempt in range(1, MAX_OPTIMIZATION_RETRIES + 2):
+        await rt.broadcast(f"Re-running benchmarks (attempt {attempt})...")
+        rerun_update = await _rerun_benchmarks(state)
+        state.update(rerun_update)
+
+        should_stop, reason = _should_stop_retrying(state)
+        log.info(
+            "should_retry_decision",
+            decision="report" if should_stop else "optimize",
+            reason=reason,
+            retry_count=state.get("retry_count", 0),
+            correctness_failures=len(state.get("correctness_failures", [])),
+        )
+
+        if should_stop:
+            if state.get("correctness_failures"):
+                state["optimized_files"] = _revert_broken_files(state)
+            break
+
+        await rt.broadcast("Re-optimizing based on benchmark feedback...")
+        state.update(await optimize_node(state))
+
+    # ── Report ───────────────────────────────────────────────────────────
+    await rt.broadcast("Generating CodeMark report...")
+    state.update(await report_node(state))
+
+    # ── Create PR ────────────────────────────────────────────────────────
+    await rt.broadcast("Creating pull request...")
+    state.update(await _create_pr(state))
+
+    # ── Cleanup ──────────────────────────────────────────────────────────
+    repo_path = state.get("repo_path", "")
+    if repo_path:
+        await asyncio.to_thread(cleanup_repo, repo_path)
+        log.info("cleanup_complete", repo_path=repo_path)
+
+    return _extract_result(state)
 
 
 async def run_optimization_pipeline(
@@ -280,76 +315,33 @@ async def run_optimization_pipeline(
     queue: asyncio.Queue | None = None,
     optimization_bias: str = "balanced",
 ) -> dict:
-    """Run the full optimization pipeline and stream updates."""
+    """Public entry point — creates a per-request Railtracks Flow and runs it.
+
+    The signature is intentionally identical to the old LangGraph version so
+    that ``main.py`` requires zero changes.
+    """
     log.info("pipeline_start", repo_url=repo_url, optimization_bias=optimization_bias)
     pipeline_start = time.monotonic()
 
-    initial_state: AgentState = {
-        "repo_url": repo_url,
-        "github_token": github_token,
-        "optimization_bias": optimization_bias,
-        "messages": [],
-    }
+    broadcast_cb = None
+    if queue:
+        async def broadcast_cb(msg: str) -> None:
+            await queue.put({
+                "event": "progress",
+                "data": json.dumps({"node": "pipeline", "message": msg}),
+            })
 
-    final_state = {}
-    sent_message_count = 0
-    async for event in compiled_graph.astream(initial_state):
-        for node_name, state_update in event.items():
-            if not state_update:
-                log.info("node_completed_empty", node=node_name)
-                continue
-            elapsed = time.monotonic() - pipeline_start
-            state_keys = [k for k in state_update.keys() if k != "messages" and k != "github_token"]
-
-            log.info(
-                "node_completed",
-                node=node_name,
-                elapsed_s=round(elapsed, 1),
-                state_keys=state_keys,
-            )
-
-            if queue and "messages" in state_update:
-                new_messages = state_update["messages"][sent_message_count:]
-                for msg in new_messages:
-                    await queue.put({
-                        "event": "progress",
-                        "data": json.dumps({"node": node_name, "message": msg}),
-                    })
-                sent_message_count = len(state_update["messages"])
-            final_state.update(state_update)
-
-    total_elapsed = time.monotonic() - pipeline_start
-
-    initial_results = final_state.get("initial_results", [])
-    final_results = final_state.get("final_results", [])
-    initial_total = sum(r.get("avg_time_ms", 0) for r in initial_results)
-    final_total = sum(r.get("avg_time_ms", 0) for r in final_results)
-    comparison = final_state.get("comparison", {})
-    score = comparison.get("benchy_score", {})
-
-    log_block(
-        "PIPELINE COMPLETE",
-        metadata={
-            "total_time_s": round(total_elapsed, 1),
-            "hotspots_found": len(final_state.get("analysis", {}).get("hotspots", [])),
-            "files_optimized": len(final_state.get("optimized_files", {})),
-            "benchmarks_before_ms": round(initial_total, 1),
-            "benchmarks_after_ms": round(final_total, 1),
-            "score_before": score.get("overall_before", "N/A"),
-            "score_after": score.get("overall_after", "N/A"),
-            "pr_url": final_state.get("pr_url", ""),
-        },
-        color="magenta",
+    flow = rt.Flow(
+        "CodeMark Optimization",
+        entry_point=optimization_pipeline,
+        broadcast_callback=broadcast_cb,
+        save_state=True,
+        timeout=900.0,
     )
 
-    result = {
-        "graph_data": final_state.get("graph_data", {}),
-        "comparison": comparison,
-        "optimized_files": final_state.get("optimized_files", {}),
-        "initial_results": initial_results,
-        "final_results": final_results,
-        "analysis": final_state.get("analysis", {}),
-        "pr_url": final_state.get("pr_url", ""),
-    }
+    result = await flow.ainvoke(repo_url, github_token, optimization_bias)
+
+    total_elapsed = time.monotonic() - pipeline_start
+    log.info("pipeline_complete", total_time_s=round(total_elapsed, 1))
 
     return result
