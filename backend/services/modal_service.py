@@ -39,21 +39,29 @@ python_image = (
 
 node_image = (
     modal.Image.debian_slim()
-    .apt_install("nodejs", "npm")
+    .apt_install("curl", "build-essential")
     .run_commands(
-        "npm install -g "
-        "lodash express react react-dom next "
-        "axios framer-motion zod "
-        "typescript ts-node "
-        "jest mocha chai "
-        "mongoose pg knex sequelize prisma "
-        "socket.io ws "
-        "jsonwebtoken bcrypt uuid "
-        "dayjs moment date-fns "
-        "cheerio node-fetch "
-        "@tanstack/react-query swr"
+        # Install nvm (Node Version Manager)
+        'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash',
+        # Source nvm and install latest LTS Node.js
+        'bash -c "source $HOME/.nvm/nvm.sh && nvm install --lts && nvm use --lts"',
+        # Install global npm packages using nvm-managed npm
+        'bash -c "source $HOME/.nvm/nvm.sh && npm install -g '
+        'lodash express react react-dom next '
+        'axios framer-motion zod '
+        'typescript ts-node '
+        'jest mocha chai '
+        'mongoose pg knex sequelize prisma '
+        'socket.io ws '
+        'jsonwebtoken bcrypt uuid '
+        'dayjs moment date-fns '
+        'cheerio node-fetch '
+        '@tanstack/react-query swr"',
     )
-    .env({"NODE_PATH": "/usr/local/lib/node_modules"})
+    .env({
+        "NVM_DIR": "/root/.nvm",
+        "PATH": "/root/.nvm/versions/node/*/bin:/root/.nvm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    })
 )
 
 # ---------------------------------------------------------------------------

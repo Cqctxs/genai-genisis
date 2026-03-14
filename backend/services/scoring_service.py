@@ -65,18 +65,20 @@ COMPLEXITY_BASE_START = 3000
 def _match_results(
     initial: list[dict], final: list[dict]
 ) -> list[tuple[dict, dict]]:
-    """Pair initial/final results by function_name."""
-    final_by_fn: dict[str, dict] = {}
+    """Pair initial/final results by (function_name, file)."""
+    final_by_fn: dict[tuple[str, str], dict] = {}
     for r in final:
         fn = r.get("function_name", "")
-        if fn:
-            final_by_fn[fn] = r
+        file_path = r.get("file", "")
+        if fn and file_path:
+            final_by_fn[(fn, file_path)] = r
 
     pairs: list[tuple[dict, dict]] = []
     for r in initial:
         fn = r.get("function_name", "")
-        if fn in final_by_fn:
-            pairs.append((r, final_by_fn[fn]))
+        file_path = r.get("file", "")
+        if (fn, file_path) in final_by_fn:
+            pairs.append((r, final_by_fn[(fn, file_path)]))
     return pairs
 
 
@@ -241,6 +243,9 @@ def compute_benchy_score(
     # ------------------------------------------------------------------
     # 5. Complexity score (biggest lever for algorithmic improvements)
     # ------------------------------------------------------------------
+    # Map function name → speedup so complexity reward can be gated on
+    # whether benchmarks actually improved (or at least didn't regress).
+    speedup_by_fn = {c.function_name: c.speedup_factor for c in comparisons}
     optimised_fns = {c.function_name for c in comparisons}
     complexity_delta = 0.0
 
@@ -251,7 +256,21 @@ def compute_benchy_score(
 
         cat_pts = _category_score(hs.get("category", ""))
         sev_mult = SEVERITY_WEIGHT.get(hs.get("severity", "medium").lower(), 1.0)
-        complexity_delta += cat_pts * sev_mult
+        raw_pts = cat_pts * sev_mult
+
+        # Scale the reward by actual benchmark outcome.
+        # speedup >= 1.0  → full credit
+        # speedup in [0.9, 1.0) → partial credit (noise / neutral)
+        # speedup < 0.9  → no complexity credit (clear regression)
+        fn_speedup = speedup_by_fn.get(fn, 1.0)
+        if fn_speedup >= 1.0:
+            scale = 1.0
+        elif fn_speedup >= 0.9:
+            scale = (fn_speedup - 0.9) / 0.1  # linear 0→1 over [0.9, 1.0]
+        else:
+            scale = 0.0
+
+        complexity_delta += raw_pts * scale
 
     complexity_delta = min(complexity_delta, 3000)
     complexity_score = max(0, min(complexity_base + complexity_delta, 6000))
@@ -289,8 +308,11 @@ def compute_benchy_score(
         overall_before=round(overall_before, 1),
         overall_after=round(overall_after, 1),
         time_score=round(time_score, 1),
+        time_score_before=float(TIME_BASE),
         memory_score=round(memory_score, 1),
+        memory_score_before=float(MEMORY_BASE),
         complexity_score=round(complexity_score, 1),
+        complexity_score_before=round(complexity_base, 1),
         radar_data=radar,
     )
     return score, comparisons

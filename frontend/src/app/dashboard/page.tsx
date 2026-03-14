@@ -181,6 +181,9 @@ export default function DashboardPage() {
                   <TabsTrigger value="results" disabled={!results}>
                     Results
                   </TabsTrigger>
+                  <TabsTrigger value="benchmarks" disabled={!results?.benchmark_details?.length}>
+                    Benchmarks
+                  </TabsTrigger>
                   <TabsTrigger value="pr" disabled={!results}>
                     Pull Request
                   </TabsTrigger>
@@ -202,6 +205,67 @@ export default function DashboardPage() {
                   <ErrorBoundary>
                     {results?.comparison && (
                       <ScoreDashboard comparison={results.comparison} />
+                    )}
+                  </ErrorBoundary>
+                </TabsContent>
+
+                <TabsContent value="benchmarks" className="mt-4">
+                  <ErrorBoundary>
+                    {results?.benchmark_details && results.benchmark_details.length > 0 ? (
+                      <div className="space-y-4">
+                        {results.benchmark_details.map((detail, idx) => (
+                          <div key={idx} className="border border-light/10 rounded-lg p-4 bg-light/5 space-y-3">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <h3 className="font-mono text-sm font-semibold text-light">{detail.function_name}</h3>
+                                <p className="text-xs text-light/60 mt-1">{detail.file}</p>
+                              </div>
+                              <div className={`text-sm font-medium px-2 py-1 rounded ${detail.speedup_factor >= 1 ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
+                                {detail.speedup_factor >= 1
+                                  ? `${detail.speedup_factor.toFixed(1)}x faster`
+                                  : `${(1 / detail.speedup_factor).toFixed(1)}x slower`}
+                              </div>
+                            </div>
+
+                            {detail.summary && (
+                              <p className="text-sm text-light/70 italic border-l-2 border-light/20 pl-3 py-1">
+                                {detail.summary}
+                              </p>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div className="bg-light/5 p-2 rounded">
+                                <span className="text-light/60">Before</span>
+                                <div className="text-light mt-1">
+                                  <p>{detail.before_time_ms.toFixed(2)}ms</p>
+                                  <p className="text-light/60">{detail.before_memory_mb.toFixed(1)}MB</p>
+                                </div>
+                              </div>
+                              <div className="bg-light/5 p-2 rounded">
+                                <span className="text-light/60">After</span>
+                                <div className="text-light mt-1">
+                                  <p>{detail.after_time_ms.toFixed(2)}ms</p>
+                                  <p className="text-light/60">{detail.after_memory_mb.toFixed(1)}MB</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <details className="text-xs">
+                              <summary className="cursor-pointer text-light/60 hover:text-light/80 py-2">
+                                View benchmark script ({detail.language})
+                              </summary>
+                              <pre className="mt-2 p-2 bg-light/10 rounded overflow-x-auto text-light/60 text-[11px]">
+                                {detail.script_content.slice(0, 500)}
+                                {detail.script_content.length > 500 && '...'}
+                              </pre>
+                            </details>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 text-light/40">
+                        <p>No benchmark details available</p>
+                      </div>
                     )}
                   </ErrorBoundary>
                 </TabsContent>

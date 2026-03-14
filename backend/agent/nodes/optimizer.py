@@ -1,14 +1,63 @@
 import asyncio
 import json
+import re
 
 import structlog
+from pydantic_ai import Agent
 
-from agent.schemas import AnalysisResult, BenchmarkResult, Hotspot, OptimizationChange, OptimizationPlan
+from agent.schemas import AnalysisResult, Hotspot, OptimizationChange, OptimizationPlan
 from agent.state import AgentState
-from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
+from services.gemini_service import (
+    GEMINI_FLASH,
+    run_agent_logged,
+)
 from services.github_service import read_file
 
 log = structlog.get_logger()
+
+MIN_SIZE_RATIO = 0.25
+DESTRUCTIVE_PATTERNS = [
+    re.compile(r"^\s*(return\s+(null|undefined|None|void|0|''|\"\"|false|\[\]|\{\})\s*;?\s*)$", re.MULTILINE),
+    re.compile(r"^\s*(pass\s*)$", re.MULTILINE),
+]
+
+
+def _is_destructive_change(change: OptimizationChange) -> bool:
+    """Detect when an 'optimization' guts or trivializes a function.
+
+    Returns True if the optimized snippet is suspiciously shorter than the
+    original, or consists entirely of no-op / trivial return statements.
+    """
+    orig = change.original_snippet.strip()
+    opt = change.optimized_snippet.strip()
+
+    if not opt:
+        return True
+
+    if len(orig) > 20 and len(opt) / len(orig) < MIN_SIZE_RATIO:
+        log.warning(
+            "optimization_suspiciously_short",
+            function=change.function_name,
+            file=change.file,
+            original_len=len(orig),
+            optimized_len=len(opt),
+            ratio=round(len(opt) / len(orig), 2),
+        )
+        return True
+
+    opt_lines = [line.strip() for line in opt.splitlines() if line.strip()]
+    if len(opt_lines) <= 2:
+        for pattern in DESTRUCTIVE_PATTERNS:
+            if all(pattern.match(line) for line in opt_lines):
+                log.warning(
+                    "optimization_trivial_noop",
+                    function=change.function_name,
+                    file=change.file,
+                    optimized_snippet=opt[:200],
+                )
+                return True
+
+    return False
 
 OPTIMIZER_PROMPT = """You are an elite performance optimization engineer. Given:
 1. A performance bottleneck with severity and reasoning
@@ -116,6 +165,21 @@ not just different from your last attempt.
 """
 
 
+def _create_optimizer_agent() -> Agent:
+    """Create an optimizer agent."""
+    agent = Agent(
+        GEMINI_FLASH,
+        output_type=OptimizationPlan,
+        system_prompt=OPTIMIZER_PROMPT,
+    )
+
+    agent._codemark_system_prompt = OPTIMIZER_PROMPT  # type: ignore[attr-defined]
+    agent._codemark_output_type = "OptimizationPlan"  # type: ignore[attr-defined]
+    agent._model_str = GEMINI_FLASH  # type: ignore[attr-defined]
+
+    return agent
+
+
 async def _optimize_file(
     file_path: str,
     file_content: str,
@@ -127,14 +191,15 @@ async def _optimize_file(
 ) -> tuple[str, list[OptimizationChange], str]:
     """Optimize a single file's hotspots. Returns (file_path, changes, optimized_content).
 
-    If correctness_failures is provided, the prompt focuses on fixing the broken
-    functions while preserving the performance optimization intent.
-    If previous_results is provided, the prompt warns about regressions from
-    a prior optimization attempt so the LLM pivots its strategy.
+    Uses a Thinking model with a sandbox tool so the agent can iteratively test
+    its code before finalizing. Changes are then passed through the Reviewer
+    agent (actor-critic pattern) and a destructive-change guard.
     """
+    from agent.nodes.reviewer import review_optimization
+
     file_results = [r for r in benchmark_results if r.get("file") == file_path]
 
-    agent = get_agent(OptimizationPlan, OPTIMIZER_PROMPT, GEMINI_PRO)
+    agent = _create_optimizer_agent()
 
     hotspot_info = [
         {"function_name": h.function_name, "severity": h.severity,
@@ -142,7 +207,6 @@ async def _optimize_file(
         for h in hotspots
     ]
 
-    # Build correctness context if this file has failures from a previous attempt
     correctness_section = ""
     if correctness_failures:
         file_failures = [f for f in correctness_failures if f.get("file") == file_path]
@@ -195,14 +259,48 @@ Rules:
 Optimize the bottleneck functions in this file."""
 
     try:
-        result = await run_agent_logged(agent, prompt, node_name=f"optimize_{file_path.split('/')[-1]}")
+        result = await run_agent_logged(
+            agent, prompt,
+            node_name=f"optimize_{file_path.split('/')[-1]}",
+        )
         plan: OptimizationPlan = result.output  # type: ignore[assignment]
 
-        optimized = file_content
+        # Gate 1: Destructive change guard (fast, local)
+        non_destructive: list[OptimizationChange] = []
         for change in plan.changes:
+            if _is_destructive_change(change):
+                log.warning(
+                    "optimization_rejected_destructive",
+                    file=change.file,
+                    function=change.function_name,
+                    explanation=change.explanation[:200],
+                )
+                continue
+            non_destructive.append(change)
+
+        # Gate 2: Reviewer agent critique (LLM-based, parallel with other files)
+        reviews = await review_optimization(non_destructive, file_content, file_path)
+
+        review_by_fn = {r.function_name: r for r in reviews}
+        accepted_changes: list[OptimizationChange] = []
+        for change in non_destructive:
+            review = review_by_fn.get(change.function_name)
+            if review and not review.approved:
+                log.warning(
+                    "optimization_rejected_by_reviewer",
+                    file=change.file,
+                    function=change.function_name,
+                    reason=review.reason[:200],
+                    suggestion=review.suggestion[:200],
+                )
+                continue
+            accepted_changes.append(change)
+
+        optimized = file_content
+        for change in accepted_changes:
             optimized = optimized.replace(change.original_snippet, change.optimized_snippet)
 
-        for change in plan.changes:
+        for change in accepted_changes:
             log.info(
                 "optimization_change",
                 file=change.file,
@@ -211,7 +309,18 @@ Optimize the bottleneck functions in this file."""
                 expected_improvement=change.expected_improvement,
             )
 
-        return file_path, plan.changes, optimized
+        total = len(plan.changes)
+        if len(accepted_changes) < total:
+            log.info(
+                "optimization_changes_filtered",
+                file=file_path,
+                total=total,
+                accepted=len(accepted_changes),
+                rejected_destructive=total - len(non_destructive),
+                rejected_by_reviewer=len(non_destructive) - len(accepted_changes),
+            )
+
+        return file_path, accepted_changes, optimized
     except Exception as e:
         log.error("optimize_file_failed", file=file_path, error=str(e))
         return file_path, [], file_content

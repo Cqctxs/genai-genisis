@@ -5,7 +5,7 @@ import structlog
 
 from agent.schemas import AnalysisResult, BenchmarkScript, Hotspot
 from agent.state import AgentState
-from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
+from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
 log = structlog.get_logger()
 
@@ -50,7 +50,52 @@ DETERMINISM RULES:
 - If the function reads from network/DB, use the same mock data.
 - The fingerprint MUST be identical across runs with the same code. If it is not deterministic, the system will incorrectly flag the optimization as broken.
 
-## Output Format
+## PREVENTING DEAD CODE ELIMINATION (CRITICAL)
+
+JavaScript V8 and Python compilers aggressively optimize away function calls whose return
+values are never used. If you do NOT follow these rules, your benchmark will report 0.00ms
+because the engine literally deletes the code.
+
+1. ALWAYS capture the return value of EVERY function call inside the timing loop.
+2. Accumulate results into a variable that PERSISTS across iterations (e.g. a checksum,
+   an XOR hash, or append to an array).
+3. AFTER the timing loop, PRINT or USE the accumulated result so the engine cannot
+   prove the computation is dead.
+
+### JavaScript anti-DCE pattern (REQUIRED):
+```javascript
+let _checksum = 0;
+const start = performance.now();
+for (let i = 0; i < iterations; i++) {
+    const result = targetFunction(testData);
+    _checksum += (typeof result === 'object' ? JSON.stringify(result).length : Number(result)) || 1;
+}
+const elapsed = performance.now() - start;
+if (_checksum === -Infinity) console.log(_checksum);
+```
+
+### Python anti-DCE pattern (REQUIRED):
+```python
+_checksum = 0
+start = time.perf_counter()
+for _ in range(iterations):
+    result = target_function(test_data)
+    _checksum += len(str(result)) if result is not None else 1
+elapsed = time.perf_counter() - start
+assert _checksum >= 0, _checksum
+```
+
+## DYNAMIC ITERATION SCALING (REQUIRED)
+
+Do NOT hardcode the number of iterations. Use this pattern:
+1. Run the function ONCE as a warmup and measure the single-call time.
+2. If single_call < 0.1ms: use 10,000 iterations
+3. If single_call < 1ms: use 5,000 iterations
+4. If single_call < 10ms: use 500 iterations
+5. If single_call < 100ms: use 50 iterations
+6. If single_call >= 100ms: use 10 iterations
+7. Ensure total estimated runtime stays under 25 seconds.
+8. The reported avg_time_ms MUST be > 0.001. If it rounds to 0, increase input size.
 
 ## INPUT SIZE — THIS IS CRITICAL
 
@@ -62,19 +107,19 @@ DETERMINISM RULES:
 - For string operations: use strings of 10 000+ characters.
 - NEVER use trivially small inputs (N < 100). Small inputs hide algorithmic improvements
   behind constant-factor overhead and produce misleading benchmark results.
-- Run at least 50 iterations to get a stable average.
+
+## Output Format
 
 For Python: Use time.perf_counter() or timeit to measure execution time. Write scripts that
 import the target functions from the repo, set up realistic-sized test data (see INPUT SIZE above),
-run at least 50 iterations, and output a single JSON object on the LAST line of stdout:
-{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
+and output a single JSON object on the LAST line of stdout:
+{"function": "name", "avg_time_ms": 123.4, "iterations": 100, "validation_fingerprint": "abcd1234"}
 
 For JavaScript/TypeScript: Use require() (CommonJS) NOT import (ESM). The sandbox runs
 scripts with plain `node` in CommonJS mode. Use `const { performance } = require("perf_hooks")`
 for timing. Write scripts that require target functions from the repo, set up realistic-sized
-test data (see INPUT SIZE above), run at least 50 iterations, and output a single JSON object
-on the LAST line of stdout:
-{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
+test data (see INPUT SIZE above), and output a single JSON object on the LAST line of stdout:
+{"function": "name", "avg_time_ms": 123.4, "iterations": 100, "validation_fingerprint": "abcd1234"}
 
 Any debug/progress output must go to stderr or earlier stdout lines — the LAST line of stdout
 must be the JSON result object and nothing else."""
@@ -84,7 +129,7 @@ async def _generate_single_benchmark(
     hotspot: Hotspot, language: str, ast_map: dict, index: int
 ) -> BenchmarkScript | None:
     """Generate a benchmark script for a single hotspot."""
-    agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_PRO)
+    agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_FLASH)
 
     # Filter AST to relevant file
     filtered_ast = {

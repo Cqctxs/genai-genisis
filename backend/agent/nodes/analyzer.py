@@ -5,7 +5,7 @@ import structlog
 
 from agent.schemas import AnalysisResult, BenchmarkBatch, BenchmarkScript, Hotspot, TriageChunk, TriageResult
 from agent.state import AgentState
-from services.gemini_service import GEMINI_FLASH, PRO_SETTINGS_HIGH, get_agent, run_agent_logged
+from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 from services.log_utils import log_block
 from services.github_service import get_file_tree, read_file
 from services.parser_service import parse_repo
@@ -77,10 +77,58 @@ INPUT SIZE — THIS IS CRITICAL:
 - For string operations: use strings of 10 000+ characters.
 - NEVER use trivially small inputs (N < 100). Small inputs hide algorithmic improvements
   behind constant-factor overhead and produce misleading benchmark results.
-- Run at least 50 iterations to get a stable average.
 - TOTAL SCRIPT EXECUTION MUST COMPLETE WITHIN 30 SECONDS. If the function is slow,
   reduce the number of iterations (minimum 5) or input size until total runtime stays under 30s.
   Use a warm-up call to estimate per-call cost, then choose iterations accordingly.
+
+## PREVENTING DEAD CODE ELIMINATION (CRITICAL)
+
+JavaScript V8 and Python compilers aggressively optimize away function calls whose return
+values are never used. If you do NOT follow these rules, your benchmark will report 0.00ms
+because the engine literally deletes the code.
+
+1. ALWAYS capture the return value of EVERY function call inside the timing loop.
+2. Accumulate results into a variable that PERSISTS across iterations (e.g. a checksum,
+   an XOR hash, or append to an array).
+3. AFTER the timing loop, PRINT or USE the accumulated result so the engine cannot
+   prove the computation is dead.
+
+### JavaScript anti-DCE pattern (REQUIRED):
+```javascript
+let _checksum = 0;
+const start = performance.now();
+for (let i = 0; i < iterations; i++) {
+    const result = targetFunction(testData);
+    _checksum += (typeof result === 'object' ? JSON.stringify(result).length : Number(result)) || 1;
+}
+const elapsed = performance.now() - start;
+// Anti-DCE anchor — do NOT remove
+if (_checksum === -Infinity) console.log(_checksum);
+```
+
+### Python anti-DCE pattern (REQUIRED):
+```python
+_checksum = 0
+start = time.perf_counter()
+for _ in range(iterations):
+    result = target_function(test_data)
+    _checksum += len(str(result)) if result is not None else 1
+elapsed = time.perf_counter() - start
+# Anti-DCE anchor
+assert _checksum >= 0, _checksum
+```
+
+## DYNAMIC ITERATION SCALING (REQUIRED)
+
+Do NOT hardcode the number of iterations. Use this pattern:
+1. Run the function ONCE as a warmup and measure the single-call time.
+2. If single_call < 0.1ms: use 10,000 iterations
+3. If single_call < 1ms: use 5,000 iterations
+4. If single_call < 10ms: use 500 iterations
+5. If single_call < 100ms: use 50 iterations
+6. If single_call >= 100ms: use 10 iterations
+7. Ensure total estimated runtime stays under 25 seconds.
+8. The reported avg_time_ms MUST be > 0.001. If it rounds to 0, increase input size.
 
 For Python: Use time.perf_counter() for timing. Copy the target function into the script,
 set up realistic-sized test data (see INPUT SIZE above), and measure execution time.
@@ -255,7 +303,7 @@ async def _generate_benchmark_batch(
     )
 
     try:
-        result = await run_agent_logged(agent, prompt, node_name=f"gen_bench_batch_{batch_index}", model_settings=PRO_SETTINGS_HIGH)
+        result = await run_agent_logged(agent, prompt, node_name=f"gen_bench_batch_{batch_index}")
         batch: BenchmarkBatch = result.output  # type: ignore[assignment]
         log.info(
             "benchmark_batch_generated",
@@ -278,12 +326,72 @@ async def _generate_benchmark_batch(
         return []
 
 
+async def _process_chunk_stream(
+    chunk: TriageChunk,
+    ast_map: dict,
+    repo_path: str,
+    language: str,
+    chunk_index: int,
+    repo_files: dict[str, str],
+) -> tuple[list[Hotspot], list[dict], list[dict]]:
+    """Stream a single chunk through the full pipeline: analyze -> gen benchmarks -> run.
+
+    Returns (hotspots, benchmark_scripts_dicts, benchmark_results).
+    Each chunk is fully independent, enabling maximum parallelism.
+    """
+    from agent.nodes.runner import _execute_single_benchmark
+
+    # Step 1: Analyze this chunk for hotspots
+    hotspots = await _analyze_chunk(chunk, ast_map, repo_path, language)
+    if not hotspots:
+        return [], [], []
+
+    log.info(
+        "chunk_stream_analyzed",
+        chunk_id=chunk.chunk_id,
+        hotspots_found=len(hotspots),
+    )
+
+    # Step 2: Generate benchmarks for these hotspots
+    benchmarks = await _generate_benchmark_batch(hotspots, language, ast_map, chunk_index)
+    if not benchmarks:
+        return hotspots, [], []
+
+    log.info(
+        "chunk_stream_benchmarks_generated",
+        chunk_id=chunk.chunk_id,
+        benchmarks=len(benchmarks),
+    )
+
+    # Step 3: Run benchmarks immediately (don't wait for other chunks)
+    bench_tasks = [
+        _execute_single_benchmark(bench, i, repo_files, ast_map=ast_map)
+        for i, bench in enumerate(benchmarks)
+    ]
+    results = list(await asyncio.gather(*bench_tasks))
+
+    log.info(
+        "chunk_stream_benchmarks_run",
+        chunk_id=chunk.chunk_id,
+        results=len(results),
+        total_time_ms=round(sum(r.get("avg_time_ms", 0) for r in results), 1),
+    )
+
+    return hotspots, [b.model_dump() for b in benchmarks], results
+
+
 async def chunk_analyze_node(state: AgentState) -> dict:
-    """Analyze chunks in parallel (Flash), then generate benchmarks in batches (Flash)."""
+    """Streaming per-chunk pipeline: analyze -> gen benchmarks -> run, all in parallel.
+
+    Each chunk independently flows through the full pipeline. Results are merged
+    at the end. This overlaps LLM calls with Modal sandbox execution for maximum
+    throughput.
+    """
     triage_data = state.get("triage_result", {})
     triage = TriageResult(**triage_data)
     ast_map = state.get("ast_map", {})
     repo_path = state.get("repo_path", "")
+    file_tree = state.get("file_tree", [])
 
     MAX_PARALLEL_CHUNKS = 5
     chunks = sorted(triage.chunks, key=lambda c: c.priority)[:MAX_PARALLEL_CHUNKS]
@@ -292,24 +400,35 @@ async def chunk_analyze_node(state: AgentState) -> dict:
         "chunk_analyze_start",
         num_chunks=len(chunks),
         chunk_labels=[c.label for c in chunks],
+        mode="streaming",
     )
 
-    # Phase 1: Analyze all chunks in parallel (Flash)
-    analysis_tasks = [
-        _analyze_chunk(chunk, ast_map, repo_path, triage.language)
-        for chunk in chunks
-    ]
-    chunk_results = await asyncio.gather(*analysis_tasks)
+    repo_files: dict[str, str] = {}
+    for f in file_tree[:30]:
+        try:
+            repo_files[f] = read_file(repo_path, f)
+        except Exception:
+            pass
 
-    # Merge and deduplicate hotspots
+    stream_tasks = [
+        _process_chunk_stream(chunk, ast_map, repo_path, triage.language, i, repo_files)
+        for i, chunk in enumerate(chunks)
+    ]
+    stream_results = await asyncio.gather(*stream_tasks)
+
     all_hotspots: list[Hotspot] = []
+    all_benchmarks: list[dict] = []
+    all_results: list[dict] = []
     seen: set[tuple[str, str]] = set()
-    for hotspot_list in chunk_results:
-        for hotspot in hotspot_list:
+
+    for hotspots, benchmarks, results in stream_results:
+        for hotspot in hotspots:
             key = (hotspot.function_name, hotspot.file)
             if key not in seen:
                 seen.add(key)
                 all_hotspots.append(hotspot)
+        all_benchmarks.extend(benchmarks)
+        all_results.extend(results)
 
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     all_hotspots.sort(key=lambda h: severity_order.get(h.severity, 4))
@@ -323,41 +442,15 @@ async def chunk_analyze_node(state: AgentState) -> dict:
             category=hotspot.category,
         )
 
-    log.info("chunk_analyze_complete", language=triage.language, hotspots=len(all_hotspots))
-
-    # Phase 2: Generate benchmarks in batches (Flash) — fewer API calls
-    batches = [
-        all_hotspots[i:i + BENCHMARK_BATCH_SIZE]
-        for i in range(0, len(all_hotspots), BENCHMARK_BATCH_SIZE)
-    ]
-    log.info(
-        "benchmark_generation_start",
-        num_hotspots=len(all_hotspots),
-        num_batches=len(batches),
-        batch_sizes=[len(b) for b in batches],
-    )
-
-    batch_tasks = [
-        _generate_benchmark_batch(batch, triage.language, ast_map, i)
-        for i, batch in enumerate(batches)
-    ]
-    batch_results = await asyncio.gather(*batch_tasks)
-
-    benchmarks = []
-    for script_list in batch_results:
-        benchmarks.extend([s.model_dump() for s in script_list])
-
-    log.info("benchmark_generation_complete", count=len(benchmarks))
-
     log_block(
         "CHUNK ANALYZE SUMMARY",
         metadata={
             "analysis_model": GEMINI_FLASH,
             "chunks_analyzed": len(chunks),
             "hotspots_found": len(all_hotspots),
-            "benchmark_batches": len(batches),
-            "benchmark_scripts": len(benchmarks),
-            "api_calls_saved": max(0, len(all_hotspots) - len(batches)),
+            "benchmark_scripts": len(all_benchmarks),
+            "initial_results": len(all_results),
+            "mode": "streaming",
         },
         color="cyan",
     )
@@ -365,15 +458,16 @@ async def chunk_analyze_node(state: AgentState) -> dict:
     analysis = AnalysisResult(
         language=triage.language,
         hotspots=all_hotspots,
-        summary=f"Analyzed {len(chunks)} code chunks in parallel. Found {len(all_hotspots)} hotspots.",
+        summary=f"Streamed {len(chunks)} chunks in parallel. Found {len(all_hotspots)} hotspots.",
     )
 
     return {
         **state,
         "analysis": analysis.model_dump(),
-        "benchmark_code": benchmarks,
+        "benchmark_code": all_benchmarks,
+        "initial_results": all_results,
         "messages": state.get("messages", []) + [
-            f"Deep analysis: found {len(all_hotspots)} hotspots across {len(chunks)} chunks",
-            f"Generated {len(benchmarks)} benchmark scripts",
+            f"Streamed analysis: {len(all_hotspots)} hotspots across {len(chunks)} chunks",
+            f"Generated and ran {len(all_benchmarks)} benchmarks",
         ],
     }

@@ -14,9 +14,33 @@ log = structlog.get_logger()
 MAX_BENCH_RETRIES = 2
 
 
+SUSPECT_TIME_THRESHOLD_MS = 0.001
+
+
 def _is_failed_result(result: dict) -> bool:
-    """A benchmark result counts as failed if it produced no usable timing data."""
-    return result.get("avg_time_ms", 0) == 0 and result.get("iterations", 0) == 0
+    """A benchmark result counts as failed if it produced no usable timing data.
+
+    Catches three cases:
+    1. Script crashed (both time and iterations are 0)
+    2. Script ran but reported 0ms with iterations > 0 (dead code elimination)
+    3. Script reported a sub-microsecond time that's below measurement resolution
+    """
+    avg_time = result.get("avg_time_ms", 0)
+    iterations = result.get("iterations", 0)
+
+    if avg_time == 0 and iterations == 0:
+        return True
+
+    if iterations > 0 and avg_time < SUSPECT_TIME_THRESHOLD_MS:
+        log.warning(
+            "benchmark_suspect_zero_time",
+            function=result.get("function_name", "unknown"),
+            avg_time_ms=avg_time,
+            iterations=iterations,
+        )
+        return True
+
+    return False
 
 
 async def _regenerate_benchmark(
@@ -27,7 +51,7 @@ async def _regenerate_benchmark(
 ) -> BenchmarkScript | None:
     """Ask Gemini to fix a benchmark script that failed at runtime."""
     from agent.nodes.benchmarker import BENCHMARK_PROMPT
-    from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
+    from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
     filtered_ast = {
         "functions": [f for f in ast_map.get("functions", []) if f.get("file") == bench.file],
@@ -35,10 +59,25 @@ async def _regenerate_benchmark(
         "imports": [i for i in ast_map.get("imports", []) if i.get("file") == bench.file],
     }
 
+    # Detect timeout errors and add specific guidance
+    is_timeout = "timeout" in error_msg.lower() or "timed out" in error_msg.lower()
+    timeout_guidance = ""
+    if is_timeout:
+        timeout_guidance = """
+### CRITICAL: Execution Timeout Detected
+The script took too long to run. The function has high algorithmic complexity.
+**You MUST reduce the input size or number of iterations significantly:**
+- Start with N=1000 or fewer (not 10,000+)
+- Use 5-10 iterations only (not 50+)
+- Prioritize completing in under 15 seconds total
+- Smaller inputs reveal algorithmic differences better than slow large inputs
+"""
+
     fix_prompt = f"""## Previous Benchmark Script FAILED at Runtime
 
 The following benchmark script for `{bench.target_function}` crashed when executed
 in the sandbox. Regenerate a FIXED version that avoids the error.
+{timeout_guidance}
 
 ### Error
 ```
@@ -69,7 +108,7 @@ IMPORTANT:
 - Do NOT reuse the broken mock data from the previous attempt."""
 
     try:
-        agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_PRO)
+        agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_FLASH)
         result = await run_agent_logged(agent, fix_prompt, node_name=f"fix_bench_{bench.target_function}")
         fixed: BenchmarkScript = result.output  # type: ignore[assignment]
         log.info(
@@ -173,6 +212,7 @@ async def _execute_single_benchmark(
     index: int,
     repo_files: dict[str, str],
     ast_map: dict | None = None,
+    allow_regeneration: bool = True,
 ) -> dict:
     """Execute a single benchmark, retrying with Gemini regeneration on failure."""
     current_bench = bench
@@ -220,9 +260,11 @@ async def _execute_single_benchmark(
             return result
 
         remaining = MAX_BENCH_RETRIES - attempt
-        if remaining <= 0 or ast_map is None:
+        if remaining <= 0 or ast_map is None or not allow_regeneration:
             if remaining <= 0:
                 log.warning("benchmark_max_retries_exhausted", target=bench.target_function)
+            elif not allow_regeneration:
+                log.warning("benchmark_regeneration_disabled", target=bench.target_function)
             return result
 
         log.info(
