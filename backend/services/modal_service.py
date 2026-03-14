@@ -54,7 +54,9 @@ node_image = (
         "jsonwebtoken@latest bcrypt@latest uuid@latest "
         "dayjs@latest moment@latest date-fns@latest "
         "cheerio@latest node-fetch@latest "
-        "@tanstack/react-query@latest swr@latest"
+        "@tanstack/react-query@latest swr@latest "
+        "dotenv@latest mathjs@latest cors@latest helmet@latest "
+        "morgan@latest body-parser@latest cookie-parser@latest"
     )
     .env({"NODE_PATH": "/usr/local/lib/node_modules"})
 )
@@ -205,6 +207,17 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     workdir = tempfile.mkdtemp()
     _write_repo_files(workdir, repo_files)
 
+    # Install repo dependencies if requirements.txt exists
+    req_txt = os.path.join(workdir, "requirements.txt")
+    if os.path.exists(req_txt):
+        subprocess.run(
+            ["pip", "install", "-q", "-r", req_txt],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=DEP_INSTALL_TIMEOUT,
+        )
+
     with open(os.path.join(workdir, "_benchmark_inner.py"), "w") as f:
         f.write(code)
 
@@ -238,6 +251,17 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
 
     workdir = tempfile.mkdtemp()
     _write_repo_files(workdir, repo_files)
+
+    # Install repo dependencies if package.json exists
+    pkg_json = os.path.join(workdir, "package.json")
+    if os.path.exists(pkg_json):
+        subprocess.run(
+            ["npm", "install", "--no-audit", "--no-fund", "--loglevel=error"],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=DEP_INSTALL_TIMEOUT,
+        )
 
     with open(os.path.join(workdir, "_benchmark_inner.js"), "w") as f:
         f.write(_esm_to_cjs(code))

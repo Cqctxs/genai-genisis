@@ -202,7 +202,12 @@ async def _optimize_file(
     """
     from agent.nodes.reviewer import review_optimization
 
-    file_results = [r for r in benchmark_results if r.get("file") == file_path]
+    file_results = [
+        {k: v for k, v in r.items() if k not in ("raw_output", "script_content")}
+        for r in benchmark_results if r.get("file") == file_path
+    ]
+    # Truncate serialized results to prevent prompt explosion
+    file_results_json = json.dumps(file_results, indent=2)[:5000]
 
     agent = _create_optimizer_agent()
 
@@ -250,7 +255,7 @@ Rules:
 
 ## Benchmark Results (Baseline)
 ```json
-{json.dumps(file_results, indent=2)}
+{file_results_json}
 ```
 {correctness_section}{regression_section}
 ## Source File: {file_path}
@@ -262,6 +267,16 @@ Rules:
 {bias_instruction if bias_instruction else BIAS_INSTRUCTIONS["balanced"]}
 
 Optimize the bottleneck functions in this file."""
+
+    MAX_PROMPT_CHARS = 50_000
+    if len(prompt) > MAX_PROMPT_CHARS:
+        log.warning(
+            "optimize_prompt_truncated",
+            file=file_path,
+            original_chars=len(prompt),
+            max_chars=MAX_PROMPT_CHARS,
+        )
+        prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[... prompt truncated for size ...]"
 
     try:
         result = await run_agent_logged(
