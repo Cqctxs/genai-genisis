@@ -10,6 +10,13 @@
   --font-sans: var(--font-inter);
   --font-serif: var(--font-junicode);
   --font-mono: var(--font-geist-mono);
+  --color-accent-red: oklch(0.652 0.234 26.69);
+  --color-accent-orange: oklch(0.7139 0.1847 42.05);
+  --color-accent-green: oklch(0.7444 0.1835 152.86);
+  --color-accent-blue: oklch(0.7348 0.1585 236.48);
+  --color-accent-purple: oklch(0.5945 0.2434 292.29);
+  --color-light: oklch(0.9569 0.0235 75.73);
+  --color-dark: oklch(0.1922 0.008 75.73);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
