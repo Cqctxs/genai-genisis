@@ -169,17 +169,18 @@ async def _generate_benchmark_details(
     if not benchmark_code:
         return []
 
-    # Map results by function name for quick lookup
-    initial_by_fn = {r.get("function_name", ""): r for r in initial_results}
-    final_by_fn = {r.get("function_name", ""): r for r in final_results}
+    initial_by_fn = {(r.get("function_name", ""), r.get("file", "")): r for r in initial_results}
+    final_by_fn = {(r.get("function_name", ""), r.get("file", "")): r for r in final_results}
 
     details = []
     agent = get_agent(SummaryText, BENCHMARK_DETAIL_PROMPT, GEMINI_FLASH)
 
-    for bench in benchmark_code[:10]:  # Limit to first 10 benchmarks for performance
+    for bench in benchmark_code[:10]:
         fn_name = bench.get("target_function", "")
-        initial = initial_by_fn.get(fn_name, {})
-        final = final_by_fn.get(fn_name, {})
+        bench_file = bench.get("file", "")
+        key = (fn_name, bench_file)
+        initial = initial_by_fn.get(key, {})
+        final = final_by_fn.get(key, {})
 
         # Find comparison for this function
         comparison = next((c for c in comparisons if c.function_name == fn_name), None)
