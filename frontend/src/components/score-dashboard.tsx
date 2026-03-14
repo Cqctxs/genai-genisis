@@ -77,12 +77,14 @@ function MetricCard({
   after,
   unit,
   improvement,
+  isNegative,
 }: {
   label: string;
   before: string;
   after: string;
   unit: string;
   improvement: string;
+  isNegative?: boolean;
 }) {
   return (
     <Card className="bg-light/5">
@@ -98,7 +100,7 @@ function MetricCard({
             {unit}
           </span>
         </div>
-        <p className="text-xs font-medium text-accent-green">{improvement}</p>
+        <p className={`text-xs font-medium ${isNegative ? "text-accent-red" : "text-accent-green"}`}>{improvement}</p>
       </CardContent>
     </Card>
   );
@@ -286,21 +288,36 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
             before={totalOldTime.toFixed(1)}
             after={totalNewTime.toFixed(1)}
             unit="ms"
-            improvement={`+${((1 - totalNewTime / totalOldTime) * 100).toFixed(0)}% faster`}
+            isNegative={totalNewTime > totalOldTime}
+            improvement={(() => {
+              const pct = ((1 - totalNewTime / totalOldTime) * 100);
+              return pct >= 0
+                ? `${pct.toFixed(0)}% faster`
+                : `${Math.abs(pct).toFixed(0)}% slower`;
+            })()}
           />
           <MetricCard
             label="Memory Peak"
             before={totalOldMem.toFixed(1)}
             after={totalNewMem.toFixed(1)}
             unit=" MB"
-            improvement={`-${((1 - totalNewMem / totalOldMem) * 100).toFixed(0)}% memory`}
+            isNegative={totalNewMem > totalOldMem}
+            improvement={(() => {
+              const pct = ((1 - totalNewMem / totalOldMem) * 100);
+              return pct >= 0
+                ? `-${pct.toFixed(0)}% memory`
+                : `+${Math.abs(pct).toFixed(0)}% memory`;
+            })()}
           />
           <MetricCard
             label="Avg Speedup"
             before="1.0"
             after={avgSpeedup.toFixed(1)}
             unit="x"
-            improvement={`${avgSpeedup.toFixed(1)}x faster on average`}
+            isNegative={avgSpeedup < 1}
+            improvement={avgSpeedup >= 1
+              ? `${avgSpeedup.toFixed(1)}x faster on average`
+              : `${(1 / avgSpeedup).toFixed(1)}x slower on average`}
           />
         </div>
       </div>
@@ -346,11 +363,15 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                       <td className="text-right py-2 px-3 text-light">
                         {f.new_time_ms.toFixed(1)}ms
                       </td>
-                      <td className="text-right py-2 px-3 text-accent-green font-medium">
-                        {f.speedup_factor.toFixed(1)}x
+                      <td className={`text-right py-2 px-3 font-medium ${f.speedup_factor >= 1 ? "text-accent-green" : "text-accent-red"}`}>
+                        {f.speedup_factor >= 1
+                          ? `${f.speedup_factor.toFixed(1)}x`
+                          : `${(1 / f.speedup_factor).toFixed(1)}x slower`}
                       </td>
-                      <td className="text-right py-2 pl-3 text-accent-green">
-                        -{f.memory_reduction_pct.toFixed(0)}%
+                      <td className={`text-right py-2 pl-3 ${f.memory_reduction_pct >= 0 ? "text-accent-green" : "text-accent-red"}`}>
+                        {f.memory_reduction_pct >= 0
+                          ? `-${f.memory_reduction_pct.toFixed(0)}%`
+                          : `+${Math.abs(f.memory_reduction_pct).toFixed(0)}%`}
                       </td>
                     </tr>
                   ))}
