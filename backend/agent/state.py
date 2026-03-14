@@ -5,6 +5,7 @@ class AgentState(TypedDict, total=False):
     repo_url: str
     repo_path: str
     github_token: str
+    optimization_bias: str
     file_tree: list[str]
     ast_map: dict[str, Any]
     analysis: dict[str, Any]

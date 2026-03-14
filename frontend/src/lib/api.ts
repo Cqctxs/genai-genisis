@@ -106,12 +106,17 @@ export interface JobResult {
 
 export async function startAnalysis(
   repoUrl: string,
-  githubToken: string
+  githubToken: string,
+  optimizationBias: string = "balanced"
 ): Promise<AnalyzeResponse> {
   const res = await fetch(`${API_URL}/api/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repo_url: repoUrl, github_token: githubToken }),
+    body: JSON.stringify({
+      repo_url: repoUrl,
+      github_token: githubToken,
+      optimization_bias: optimizationBias,
+    }),
   });
 
   if (!res.ok) {

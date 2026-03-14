@@ -2,37 +2,37 @@ import json
 
 import structlog
 
-from agent.schemas import ComparisonReport
+from agent.schemas import CodeMarkScore, ComparisonReport, FunctionComparison
 from agent.state import AgentState
 from services.modal_service import get_sandbox_specs
 from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
+from services.scoring_service import compute_benchy_score
 
 log = structlog.get_logger()
 
-REPORTER_PROMPT = """You are a benchmark scoring judge. Given before/after benchmark results,
-calculate a CodeMark score and generate a detailed comparison report.
+SUMMARY_PROMPT = """You are a concise technical writer. Given the benchmark comparison data below,
+write a short summary (3-5 sentences) explaining what optimizations were applied, how they
+affected performance, and whether any time-space tradeoffs were made.
 
-Scoring rules:
-- Overall score is 0-20000. A baseline unoptimized project starts around 5000-8000.
-- Time score: faster execution = higher score (weight: 40%)
-- Memory score: lower memory usage = higher score (weight: 30%)
-- Complexity score: better algorithmic complexity = higher score (weight: 30%)
+Do NOT invent numbers — only reference the data provided. Be direct and factual."""
 
-For the radar chart, normalize each axis to 0-100:
-- I/O Speed: based on I/O-bound function improvements
-- CPU Efficiency: based on CPU-bound function improvements
-- Memory Footprint: based on memory reduction
-- Concurrency: based on parallelism improvements
-- Code Quality: based on structural improvements
 
-Calculate speedup_factor as old_time / new_time for each function.
-Calculate memory_reduction_pct as (old_memory - new_memory) / old_memory * 100."""
+class _SummaryOutput:
+    """Minimal Pydantic-like wrapper so the structured-output agent can return plain text."""
+    pass
+
+
+from pydantic import BaseModel
+
+class SummaryText(BaseModel):
+    summary: str
 
 
 async def report_node(state: AgentState) -> dict:
-    """Calculate CodeMark score and generate comparison report."""
+    """Calculate CodeMark score deterministically, then ask LLM only for summary text."""
     initial_results = state.get("initial_results", [])
     final_results = state.get("final_results", [])
+    hotspots = state.get("analysis", {}).get("hotspots", [])
 
     log.info(
         "report_start",
@@ -40,30 +40,50 @@ async def report_node(state: AgentState) -> dict:
         final_results_count=len(final_results),
         initial_total_ms=round(sum(r.get("avg_time_ms", 0) for r in initial_results), 1),
         final_total_ms=round(sum(r.get("avg_time_ms", 0) for r in final_results), 1),
+        hotspots_count=len(hotspots),
     )
 
+    # --- Deterministic scoring ---
+    score, function_comparisons = compute_benchy_score(
+        initial_results, final_results, hotspots,
+    )
+
+    # --- LLM-generated summary (qualitative only) ---
+    comparison_data = [fc.model_dump() for fc in function_comparisons]
     sandbox_specs = await get_sandbox_specs()
 
-    agent = get_agent(ComparisonReport, REPORTER_PROMPT, GEMINI_FLASH)
+    agent = get_agent(SummaryText, SUMMARY_PROMPT, GEMINI_FLASH)
 
-    prompt = f"""## Baseline Benchmark Results
+    prompt = f"""## Benchmark Comparison
 ```json
-{json.dumps(initial_results, indent=2)}
+{json.dumps(comparison_data, indent=2)}
 ```
 
-## Optimized Benchmark Results
+## Hotspots Addressed
 ```json
-{json.dumps(final_results, indent=2)}
+{json.dumps(hotspots, indent=2)[:4000]}
 ```
 
-## Sandbox Environment
-{sandbox_specs}
+## Score
+Overall: {score.overall_before:.0f} → {score.overall_after:.0f}
+Time: {score.time_score:.0f} | Memory: {score.memory_score:.0f} | Complexity: {score.complexity_score:.0f}
 
-Calculate the CodeMark score and generate the full comparison report."""
+Write a concise summary of the optimizations and their impact."""
 
-    result = await run_agent_logged(agent, prompt, node_name="report")
-    report: ComparisonReport = result.output  # type: ignore[assignment]
-    report.sandbox_specs = sandbox_specs
+    try:
+        result = await run_agent_logged(agent, prompt, node_name="report_summary")
+        summary_output: SummaryText = result.output  # type: ignore[assignment]
+        summary = summary_output.summary
+    except Exception as e:
+        log.warning("report_summary_llm_failed", error=str(e))
+        summary = _fallback_summary(function_comparisons, score)
+
+    report = ComparisonReport(
+        functions=function_comparisons,
+        benchy_score=score,
+        summary=summary,
+        sandbox_specs=sandbox_specs,
+    )
 
     log.info(
         "report_complete",
@@ -92,3 +112,24 @@ Calculate the CodeMark score and generate the full comparison report."""
             f"CodeMark Score: {report.benchy_score.overall_before:.0f} -> {report.benchy_score.overall_after:.0f}"
         ],
     }
+
+
+def _fallback_summary(
+    comparisons: list[FunctionComparison],
+    score: CodeMarkScore,
+) -> str:
+    """Generate a template-based summary when the LLM call fails."""
+    if not comparisons:
+        return "No benchmark comparisons available."
+
+    improved = [c for c in comparisons if c.speedup_factor > 1.05]
+    tradeoffs = [c for c in comparisons if c.speedup_factor > 1.05 and c.memory_reduction_pct < -5]
+
+    parts = [f"Analysed {len(comparisons)} function(s)."]
+    if improved:
+        avg_speedup = sum(c.speedup_factor for c in improved) / len(improved)
+        parts.append(f"{len(improved)} showed improvement (avg {avg_speedup:.1f}x speedup).")
+    if tradeoffs:
+        parts.append(f"{len(tradeoffs)} used a time-space tradeoff (faster execution, higher memory).")
+    parts.append(f"Overall CodeMark score: {score.overall_before:.0f} → {score.overall_after:.0f}.")
+    return " ".join(parts)

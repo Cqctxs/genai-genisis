@@ -51,6 +51,7 @@ app.add_middleware(
 class AnalyzeRequest(BaseModel):
     repo_url: HttpUrl
     github_token: str
+    optimization_bias: str = "balanced"
 
 
 class AnalyzeResponse(BaseModel):
@@ -80,7 +81,7 @@ async def analyze_repo(request: Request, body: AnalyzeRequest):
     jobs[job_id] = {"status": "pending", "result": None}
 
     asyncio.create_task(
-        _run_agent(job_id, str(body.repo_url), body.github_token, queue)
+        _run_agent(job_id, str(body.repo_url), body.github_token, queue, body.optimization_bias)
     )
 
     log.info("job_created", job_id=job_id, repo_url=str(body.repo_url))
@@ -88,13 +89,13 @@ async def analyze_repo(request: Request, body: AnalyzeRequest):
 
 
 async def _run_agent(
-    job_id: str, repo_url: str, github_token: str, queue: asyncio.Queue
+    job_id: str, repo_url: str, github_token: str, queue: asyncio.Queue, optimization_bias: str = "balanced"
 ):
     from agent.graph import run_optimization_pipeline
 
     try:
         jobs[job_id]["status"] = "running"
-        result = await run_optimization_pipeline(repo_url, github_token, queue)
+        result = await run_optimization_pipeline(repo_url, github_token, queue, optimization_bias)
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["result"] = result
         await queue.put({"event": "complete", "data": result})

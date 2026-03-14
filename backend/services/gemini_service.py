@@ -23,8 +23,8 @@ PRO_SETTINGS = GoogleModelSettings(
     google_thinking_config={"thinking_level": ThinkingLevel.LOW},
 )
 
-PRO_SETTINGS_MEDIUM = GoogleModelSettings(
-    google_thinking_config={"thinking_level": ThinkingLevel.MEDIUM},
+PRO_SETTINGS_HIGH = GoogleModelSettings(
+    google_thinking_config={"thinking_level": ThinkingLevel.HIGH},
 )
 
 def get_agent(output_type: type, system_prompt: str, model: str = GEMINI_PRO) -> Agent:
