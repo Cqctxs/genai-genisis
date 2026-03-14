@@ -6,7 +6,7 @@ import structlog
 
 from agent.schemas import BenchmarkResult, BenchmarkScript
 from agent.state import AgentState
-from services.modal_service import run_benchmark, run_benchmarks_batch
+from services.modal_service import run_benchmark
 from services.github_service import read_file
 
 log = structlog.get_logger()
