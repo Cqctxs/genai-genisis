@@ -56,6 +56,20 @@ class AnalyzeResponse(BaseModel):
     job_id: str
 
 
+@app.get("/api/repos")
+async def list_repos(github_token: str):
+    from services.github_service import list_user_repos
+
+    try:
+        repos = await list_user_repos(github_token)
+        return repos
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except Exception as e:
+        log.error("list_repos_failed", error=str(e))
+        raise HTTPException(status_code=502, detail="Failed to fetch repositories from GitHub")
+
+
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 @limiter.limit("5/minute")
 async def analyze_repo(request: Request, body: AnalyzeRequest):

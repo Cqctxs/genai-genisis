@@ -1,5 +1,33 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export interface GitHubRepo {
+  id: number;
+  full_name: string;
+  name: string;
+  owner: string;
+  owner_avatar: string;
+  html_url: string;
+  description: string;
+  language: string;
+  stargazers_count: number;
+  private: boolean;
+  fork: boolean;
+  updated_at: string;
+}
+
+export async function listRepos(githubToken: string): Promise<GitHubRepo[]> {
+  const res = await fetch(
+    `${API_URL}/api/repos?github_token=${encodeURIComponent(githubToken)}`
+  );
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Request failed" }));
+    throw new Error(error.detail || "Failed to fetch repositories");
+  }
+
+  return res.json();
+}
+
 export interface AnalyzeResponse {
   job_id: string;
 }

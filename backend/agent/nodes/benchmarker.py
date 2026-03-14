@@ -22,10 +22,10 @@ Each script should be self-contained and runnable. Include necessary imports and
 Print ONLY the JSON result object to stdout."""
 
 
-async def generate_benchmarks_node(state: AgentState) -> AgentState:
+async def generate_benchmarks_node(state: AgentState) -> dict:
     """Generate benchmark scripts targeting identified hotspots."""
-    analysis = AnalysisResult(**state["analysis"])
-    ast_map = state["ast_map"]
+    analysis = AnalysisResult(**state.get("analysis", {}))
+    ast_map = state.get("ast_map", {})
 
     agent = get_agent(list[BenchmarkScript], BENCHMARK_PROMPT, GEMINI_PRO)
 
@@ -40,8 +40,9 @@ Generate a profiling script for each hotspot. The language is: {analysis.languag
 
     log.info("generating_benchmarks", num_hotspots=len(analysis.hotspots))
     result = await agent.run(prompt)
+    benchmarks_out: list[BenchmarkScript] = result.output  # type: ignore[assignment]
 
-    benchmarks = [b.model_dump() for b in result.output]
+    benchmarks = [b.model_dump() for b in benchmarks_out]
 
     return {
         **state,

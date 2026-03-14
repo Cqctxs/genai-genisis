@@ -149,7 +149,11 @@ export default function DashboardPage() {
       </header>
 
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
-        <RepoInput onAnalyze={handleAnalyze} isLoading={phase !== "idle" && phase !== "complete" && phase !== "error"} />
+        <RepoInput
+          onAnalyze={handleAnalyze}
+          isLoading={phase !== "idle" && phase !== "complete" && phase !== "error"}
+          accessToken={(session as any)?.accessToken ?? null}
+        />
 
         {phase !== "idle" && (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -199,7 +203,7 @@ export default function DashboardPage() {
 
         {phase === "idle" && (
           <div className="text-center py-20 text-neutral-600">
-            <p className="text-lg">Enter a GitHub repository URL to get started</p>
+            <p className="text-lg">Select a repository to get started</p>
             <p className="text-sm mt-2">
               We&apos;ll analyze the codebase, benchmark performance, and optimize bottlenecks
             </p>

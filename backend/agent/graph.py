@@ -18,9 +18,9 @@ log = structlog.get_logger()
 MAX_OPTIMIZATION_RETRIES = 2
 
 
-async def clone_node(state: AgentState) -> AgentState:
+async def clone_node(state: AgentState) -> dict:
     """Clone the repository."""
-    repo_path = await clone_repo(state["repo_url"], state["github_token"])
+    repo_path = await clone_repo(state.get("repo_url", ""), state.get("github_token", ""))
     return {
         **state,
         "repo_path": repo_path,
@@ -28,10 +28,10 @@ async def clone_node(state: AgentState) -> AgentState:
     }
 
 
-async def rerun_benchmarks_node(state: AgentState) -> AgentState:
+async def rerun_benchmarks_node(state: AgentState) -> dict:
     """Re-run benchmarks on optimized code. Writes optimized files to repo first."""
     import os
-    repo_path = state["repo_path"]
+    repo_path = state.get("repo_path", "")
     optimized_files = state.get("optimized_files", {})
 
     for rel_path, content in optimized_files.items():
@@ -52,7 +52,7 @@ def should_retry(state: AgentState) -> str:
     """Decide whether to retry optimization or finalize."""
     initial = state.get("initial_results", [])
     final = state.get("final_results", [])
-    retry_count = state.get("_retry_count", 0)
+    retry_count = state.get("retry_count", 0)
 
     if retry_count >= MAX_OPTIMIZATION_RETRIES:
         return "report"
@@ -69,12 +69,12 @@ def should_retry(state: AgentState) -> str:
     return "optimize"
 
 
-async def cleanup_node(state: AgentState) -> AgentState:
+async def cleanup_node(state: AgentState) -> dict:
     """Clean up cloned repo."""
     repo_path = state.get("repo_path", "")
     if repo_path:
         cleanup_repo(repo_path)
-    return state
+    return {}
 
 
 def build_graph() -> StateGraph:

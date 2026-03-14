@@ -2,9 +2,9 @@ import json
 
 import structlog
 
-from agent.schemas import BenchmarkResult, CodeMarkScore, ComparisonReport
+from agent.schemas import ComparisonReport
 from agent.state import AgentState
-from services.e2b_service import get_sandbox_specs
+from services.modal_service import get_sandbox_specs
 from services.gemini_service import GEMINI_FLASH, get_agent
 
 log = structlog.get_logger()
@@ -29,7 +29,7 @@ Calculate speedup_factor as old_time / new_time for each function.
 Calculate memory_reduction_pct as (old_memory - new_memory) / old_memory * 100."""
 
 
-async def report_node(state: AgentState) -> AgentState:
+async def report_node(state: AgentState) -> dict:
     """Calculate CodeMark score and generate comparison report."""
     initial_results = state.get("initial_results", [])
     final_results = state.get("final_results", [])
@@ -55,7 +55,7 @@ Calculate the CodeMark score and generate the full comparison report."""
 
     log.info("generating_report")
     result = await agent.run(prompt)
-    report = result.output
+    report: ComparisonReport = result.output  # type: ignore[assignment]
     report.sandbox_specs = sandbox_specs
 
     return {

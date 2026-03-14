@@ -2,10 +2,64 @@ import os
 import shutil
 import tempfile
 
+import httpx
 import structlog
 from git import Repo
 
 log = structlog.get_logger()
+
+
+async def list_user_repos(github_token: str) -> list[dict]:
+    """Fetch the authenticated user's repositories from GitHub, sorted by last push."""
+    repos: list[dict] = []
+    url = "https://api.github.com/user/repos"
+    params = {
+        "sort": "pushed",
+        "direction": "desc",
+        "per_page": 100,
+        "affiliation": "owner,collaborator,organization_member",
+    }
+    headers = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        page = 1
+        while True:
+            params["page"] = page
+            resp = await client.get(url, params=params, headers=headers)
+            if resp.status_code == 401:
+                raise PermissionError("GitHub token is invalid or expired")
+            resp.raise_for_status()
+
+            batch = resp.json()
+            if not batch:
+                break
+
+            for r in batch:
+                repos.append({
+                    "id": r["id"],
+                    "full_name": r["full_name"],
+                    "name": r["name"],
+                    "owner": r["owner"]["login"],
+                    "owner_avatar": r["owner"]["avatar_url"],
+                    "html_url": r["html_url"],
+                    "description": r.get("description") or "",
+                    "language": r.get("language") or "",
+                    "stargazers_count": r.get("stargazers_count", 0),
+                    "private": r["private"],
+                    "fork": r.get("fork", False),
+                    "updated_at": r.get("pushed_at") or r.get("updated_at", ""),
+                })
+
+            if len(batch) < 100:
+                break
+            page += 1
+
+    log.info("repos_fetched", count=len(repos))
+    return repos
 
 
 async def clone_repo(repo_url: str, github_token: str) -> str:
