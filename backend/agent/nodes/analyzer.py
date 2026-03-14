@@ -46,6 +46,12 @@ Your job is to identify performance bottlenecks. Look for:
 - Synchronous API calls that could be batched
 - Large memory allocations in loops
 
+CRITICAL CONSTRAINTS FOR YOUR ANALYSIS:
+1. Context matters: If a program operates on a single input or does not naturally involve external I/O (e.g., pure computation or data transformation), DO NOT suggest I/O concurrency or batching optimizations. Focus instead on algorithmic complexity, memory footprint, reducing unnecessary allocations, and data structure choices.
+2. Conversely, for programs that handle many external inputs or make network/DB requests, heavily prioritize async/concurrent I/O, connection pooling, and batching.
+3. Be aware of the data size and iteration context. Algorithmic regressions matter primarily for large N. Focus on optimizing operations within very hot loops or processing large files/streams.
+4. Functionality parity: Only identify hotspots and suggest optimizations that can be fixed WITHOUT altering the exact functional behavior, return types, or edge cases of the original code.
+
 Return a structured analysis with specific hotspots, their severity, and reasoning."""
 
 BENCHMARK_PROMPT = """You are a benchmarking expert. Given one or more performance bottlenecks

@@ -9,15 +9,19 @@ import {
   Handle,
   Position,
   MarkerType,
+  BaseEdge,
+  getBezierPath,
   type Node,
   type Edge,
   type NodeProps,
+  type EdgeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import Dagre from "@dagrejs/dagre";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { GraphData, GraphNode as GraphNodeData, NodeType, EdgeType } from "@/lib/api";
+import { Globe, Brain, Database, Split, SquareFunction, Gauge, Save } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -26,54 +30,49 @@ import type { GraphData, GraphNode as GraphNodeData, NodeType, EdgeType } from "
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "var(--color-accent-red)",
   high: "var(--color-accent-orange)",
-  medium: "var(--color-accent-purple)",
-  low: "var(--color-accent-green)",
+  medium: "var(--color-accent-yellow)",
+  low: "var(--color-light)",
 };
 
 const SEVERITY_LABELS: { key: string; cls: string }[] = [
   { key: "critical", cls: "bg-accent-red" },
   { key: "high", cls: "bg-accent-orange" },
-  { key: "medium", cls: "bg-accent-purple" },
-  { key: "low", cls: "bg-accent-green" },
+  { key: "medium", cls: "bg-accent-yellow" },
 ];
 
 const NODE_TYPE_CONFIG: Record<
   NodeType,
-  { icon: string; accent: string; label: string }
+  { icon: React.ReactNode; accent: string; label: string }
 > = {
   api: {
-    icon: "🌐",
-    accent: "var(--color-accent-blue)",
+    icon: <Globe className="w-4 h-4" />,
+    accent: "var(--color-accent-purple)",
     label: "API Request",
   },
   llm: {
-    icon: "🧠",
-    accent: "var(--color-accent-purple)",
+    icon: <Brain className="w-4 h-4" />,
+    accent: "var(--color-accent-pink)",
     label: "LLM Call",
   },
   db: {
-    icon: "🗄️",
+    icon: <Database className="w-4 h-4" />,
     accent: "var(--color-accent-orange)",
     label: "Database",
   },
   condition: {
-    icon: "🔀",
-    accent: "var(--color-accent-red)",
+    icon: <Split className="w-4 h-4" />,
+    accent: "var(--color-accent-blue)",
     label: "Condition",
   },
   function: {
-    icon: "ƒ",
+    icon: <SquareFunction className="w-4 h-4" />,
     accent: "var(--color-accent-green)",
     label: "Function",
   },
 };
 
-const EDGE_TYPE_COLORS: Record<string, string> = {
-  call: "rgba(245, 240, 232, 0.25)",
-  branch_true: "var(--color-accent-green)",
-  branch_false: "var(--color-accent-red)",
-  loop_back: "var(--color-accent-blue)",
-};
+const LOOP_BACK_COLOR = "var(--color-accent-blue)";
+const DEFAULT_EDGE_COLOR = "var(--color-light)";
 
 /* ------------------------------------------------------------------ */
 /*  Dagre auto-layout                                                  */
@@ -96,17 +95,16 @@ function estimateNodeHeight(node: GraphNodeData): number {
 function getLayoutedElements(
   graphData: GraphData,
 ): { nodes: Node[]; edges: Edge[] } {
-  const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+  const g = new Dagre.graphlib.Graph({ multigraph: true }).setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 100, marginx: 40, marginy: 40 });
 
   for (const n of graphData.nodes) {
     g.setNode(n.id, { width: NODE_WIDTH, height: estimateNodeHeight(n) });
   }
 
-  for (const e of graphData.edges) {
-    if (e.edge_type !== "loop_back") {
-      g.setEdge(e.source, e.target);
-    }
+  for (let i = 0; i < graphData.edges.length; i++) {
+    const e = graphData.edges[i];
+    g.setEdge(e.source, e.target, { weight: e.edge_type === "loop_back" ? 0 : 1 }, `e-${i}`);
   }
 
   Dagre.layout(g);
@@ -129,23 +127,27 @@ function getLayoutedElements(
     };
   });
 
+  const severityColorOf = (id: string): string => {
+    const node = graphData.nodes.find((n) => n.id === id);
+    return SEVERITY_COLORS[node?.severity || "low"] ?? DEFAULT_EDGE_COLOR;
+  };
+
   const edges: Edge[] = graphData.edges.map((e, i) => {
     const edgeType: EdgeType = e.edge_type || "call";
     const isLoopBack = edgeType === "loop_back";
     const isBranch = edgeType === "branch_true" || edgeType === "branch_false";
-    const strokeColor = EDGE_TYPE_COLORS[edgeType] || EDGE_TYPE_COLORS.call;
 
     let sourceHandle: string | undefined;
     let targetHandle: string | undefined;
 
-    if (isLoopBack) {
-      sourceHandle = "loop_source";
-      targetHandle = "loop_target";
-    } else if (isBranch) {
+    if (isBranch) {
       const srcY = centerY.get(e.source) ?? 0;
       const tgtY = centerY.get(e.target) ?? 0;
       sourceHandle = tgtY <= srcY ? "branch_top" : "branch_bottom";
     }
+
+    const sourceColor = isLoopBack ? LOOP_BACK_COLOR : severityColorOf(e.source);
+    const targetColor = isLoopBack ? LOOP_BACK_COLOR : severityColorOf(e.target);
 
     return {
       id: `e-${i}`,
@@ -154,15 +156,15 @@ function getLayoutedElements(
       sourceHandle,
       targetHandle,
       label: e.label || undefined,
-      type: "bezier",
+      type: "gradient",
       animated: isLoopBack,
       style: {
-        stroke: strokeColor,
         strokeWidth: isLoopBack ? 2 : 1.5,
         strokeDasharray: isLoopBack ? "6 3" : undefined,
       },
+      data: { sourceColor, targetColor },
       labelStyle: {
-        fill: strokeColor,
+        fill: targetColor,
         fontSize: 10,
         fontWeight: 500,
       },
@@ -174,7 +176,7 @@ function getLayoutedElements(
       labelBgBorderRadius: 4,
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: strokeColor,
+        color: targetColor,
         width: 16,
         height: 16,
       },
@@ -210,10 +212,10 @@ function NodeMetrics({ node }: { node: GraphNodeData }) {
   return (
     <div className="flex items-center gap-2 text-[10px] pt-1 border-t border-white/5">
       {node.avg_time_ms != null && (
-        <span className="opacity-50">⏱ {node.avg_time_ms.toFixed(1)}ms</span>
+        <span className="opacity-50"><Gauge />{node.avg_time_ms.toFixed(1)}ms</span>
       )}
       {node.memory_mb != null && (
-        <span className="opacity-50">💾 {node.memory_mb.toFixed(1)}MB</span>
+        <span className="opacity-50"><Save />{node.memory_mb.toFixed(1)}MB</span>
       )}
     </div>
   );
@@ -232,8 +234,7 @@ function NodeShell({
 
   return (
     <>
-      <Handle type="target" position={Position.Left} className="!bg-light/30 !w-2 !h-2 !border-0" />
-      <Handle type="target" position={Position.Top} id="loop_target" className="!bg-accent-blue/50 !w-1.5 !h-1.5 !border-0" />
+      <Handle type="target" position={Position.Left} className="!opacity-0 !w-2 !h-2 !border-0" />
       <div
         className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px]"
         style={{
@@ -246,7 +247,12 @@ function NodeShell({
           className="flex items-center gap-2 px-3 py-2"
           style={{ borderBottom: `1px solid ${config.accent}33` }}
         >
-          <span className="text-sm">{config.icon}</span>
+          <div
+            className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0 text-white"
+            style={{ background: config.accent }}
+          >
+            {config.icon}
+          </div>
           <div className="min-w-0">
             <div className="text-[9px] uppercase tracking-wider opacity-40">
               {config.label}
@@ -262,8 +268,7 @@ function NodeShell({
           <NodeMetrics node={node} />
         </div>
       </div>
-      <Handle type="source" position={Position.Right} className="!bg-light/30 !w-2 !h-2 !border-0" />
-      <Handle type="source" position={Position.Top} id="loop_source" className="!bg-accent-blue/50 !w-1.5 !h-1.5 !border-0" style={{ left: "75%" }} />
+      <Handle type="source" position={Position.Right} className="!opacity-0 !w-2 !h-2 !border-0" />
     </>
   );
 }
@@ -347,26 +352,31 @@ const DbNode = memo(function DbNode({ data }: NodeProps) {
 
 const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
   const node = (data as unknown as SemanticNodeData).graphNode;
+  const config = NODE_TYPE_CONFIG.condition;
+  const severityColor = SEVERITY_COLORS[node.severity || "low"] || DEFAULT_EDGE_COLOR;
   return (
     <>
-      <Handle type="target" position={Position.Left} className="!bg-light/30 !w-2 !h-2 !border-0" />
-      <Handle type="target" position={Position.Top} id="loop_target" className="!bg-accent-blue/50 !w-1.5 !h-1.5 !border-0" style={{ left: "25%" }} />
+      <Handle type="target" position={Position.Left} className="!opacity-0 !w-2 !h-2 !border-0" />
       <div
         className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px]"
         style={{
           background: "var(--color-dark)",
-          border: `2px solid ${SEVERITY_COLORS[node.severity || "low"] || "rgba(245,240,232,0.15)"}`,
-          borderLeft: `4px solid var(--color-accent-red)`,
+          border: `2px solid ${severityColor}`,
         }}
       >
         <div
           className="flex items-center gap-2 px-3 py-2"
-          style={{ borderBottom: "1px solid rgba(245,240,232,0.06)" }}
+          style={{ borderBottom: `1px solid ${config.accent}33` }}
         >
-          <span className="text-sm">🔀</span>
+          <div
+            className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0 text-white"
+            style={{ background: config.accent }}
+          >
+            {config.icon}
+          </div>
           <div className="min-w-0">
             <div className="text-[9px] uppercase tracking-wider opacity-40">
-              Condition
+              {config.label}
             </div>
             <div className="text-xs font-semibold truncate">{node.label}</div>
           </div>
@@ -374,7 +384,7 @@ const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
         <div className="px-3 py-2 space-y-1.5">
           <div className="text-[10px] opacity-30 truncate">{node.file}</div>
           {node.metadata?.condition && (
-            <div className="text-[10px] px-2 py-1 rounded bg-accent-red/10 text-accent-red/80 font-mono">
+            <div className="text-[10px] px-2 py-1 rounded bg-accent-blue/10 text-accent-blue/80 font-mono">
               {node.metadata.condition}
             </div>
           )}
@@ -386,26 +396,19 @@ const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
         type="source"
         position={Position.Right}
         id="default"
-        className="!bg-light/30 !w-2 !h-2 !border-0"
+        className="!opacity-0 !w-2 !h-2 !border-0"
       />
       <Handle
         type="source"
         position={Position.Top}
         id="branch_top"
-        className="!bg-light/30 !w-2 !h-2 !border-0"
+        className="!opacity-0 !w-2 !h-2 !border-0"
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="branch_bottom"
-        className="!bg-light/30 !w-2 !h-2 !border-0"
-      />
-      <Handle
-        type="source"
-        position={Position.Top}
-        id="loop_source"
-        className="!bg-accent-blue/50 !w-1.5 !h-1.5 !border-0"
-        style={{ left: "80%" }}
+        className="!opacity-0 !w-2 !h-2 !border-0"
       />
     </>
   );
@@ -436,7 +439,72 @@ const FunctionNode = memo(function FunctionNode({ data }: NodeProps) {
 });
 
 /* ------------------------------------------------------------------ */
-/*  Node type registry                                                 */
+/*  Custom edge component                                              */
+/* ------------------------------------------------------------------ */
+
+function GradientEdge(props: EdgeProps) {
+  const {
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    style,
+    markerEnd,
+    data,
+  } = props;
+
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+  });
+
+  const gradientId = `edge-gradient-${id}`;
+  const {
+    sourceColor = DEFAULT_EDGE_COLOR,
+    targetColor = DEFAULT_EDGE_COLOR,
+  } = (data as Record<string, string>) ?? {};
+
+  return (
+    <>
+      <defs>
+        <linearGradient
+          id={gradientId}
+          gradientUnits="userSpaceOnUse"
+          x1={sourceX}
+          y1={sourceY}
+          x2={targetX}
+          y2={targetY}
+        >
+          <stop offset="0%" style={{ stopColor: sourceColor }} />
+          <stop offset="100%" style={{ stopColor: targetColor }} />
+        </linearGradient>
+      </defs>
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={{ ...style, stroke: `url(#${gradientId})` }}
+        markerEnd={markerEnd}
+        label={props.label}
+        labelStyle={props.labelStyle}
+        labelBgStyle={props.labelBgStyle}
+        labelBgPadding={props.labelBgPadding as [number, number]}
+        labelBgBorderRadius={props.labelBgBorderRadius}
+        labelX={labelX}
+        labelY={labelY}
+      />
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Type registries                                                    */
 /* ------------------------------------------------------------------ */
 
 const nodeTypes = {
@@ -445,6 +513,10 @@ const nodeTypes = {
   db: DbNode,
   condition: ConditionNode,
   function: FunctionNode,
+};
+
+const edgeTypes = {
+  gradient: GradientEdge,
 };
 
 /* ------------------------------------------------------------------ */
@@ -499,6 +571,7 @@ export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             fitView
             proOptions={{ hideAttribution: true }}
           >
