@@ -47,8 +47,7 @@ export function LiveTelemetry({ phase, messages }: LiveTelemetryProps) {
 
   return (
     <div className="space-y-4">
-      {/* Phase stepper */}
-      <Card className="bg-neutral-900 border-neutral-800">
+      <Card className="bg-light/5">
         <CardContent className="py-4">
           <div className="flex items-center gap-2">
             {PHASES.map((p, i) => {
@@ -61,7 +60,7 @@ export function LiveTelemetry({ phase, messages }: LiveTelemetryProps) {
                   {i > 0 && (
                     <div
                       className={`h-px w-6 ${
-                        isDone ? "bg-blue-500" : "bg-neutral-700"
+                        isDone ? "bg-accent-blue" : "bg-light/15"
                       }`}
                     />
                   )}
@@ -69,12 +68,12 @@ export function LiveTelemetry({ phase, messages }: LiveTelemetryProps) {
                     variant={isActive ? "default" : "outline"}
                     className={`text-xs whitespace-nowrap ${
                       isDone
-                        ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                        ? "bg-accent-blue/20 text-accent-blue border-accent-blue/30"
                         : isActive && !isError
-                        ? "bg-blue-600 text-white animate-pulse"
+                        ? "bg-accent-blue text-light animate-pulse"
                         : isError && isActive
-                        ? "bg-red-600 text-white"
-                        : "text-neutral-500 border-neutral-700"
+                        ? "bg-accent-red text-light"
+                        : "text-light/40 border-light/15"
                     }`}
                   >
                     {isDone && "✓ "}
@@ -87,29 +86,28 @@ export function LiveTelemetry({ phase, messages }: LiveTelemetryProps) {
         </CardContent>
       </Card>
 
-      {/* Console output */}
-      <Card className="bg-neutral-900 border-neutral-800">
+      <Card className="bg-light/5">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-neutral-400 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <CardTitle className="text-sm text-light/50 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-accent-green animate-pulse" />
             Live Console
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div
             ref={consoleRef}
-            className="bg-neutral-950 rounded-lg p-4 font-mono text-xs h-64 overflow-y-auto space-y-1"
+            className="bg-dark rounded-lg p-4 font-mono text-xs h-64 overflow-y-auto space-y-1"
           >
             {messages.length === 0 ? (
-              <p className="text-neutral-600">Waiting for output...</p>
+              <p className="text-light/30">Waiting for output...</p>
             ) : (
               messages.map((msg, i) => (
                 <div key={i} className="flex gap-3">
-                  <span className="text-neutral-600 shrink-0">
+                  <span className="text-light/30 shrink-0">
                     {new Date(msg.timestamp).toLocaleTimeString()}
                   </span>
-                  <span className="text-blue-400 shrink-0">[{msg.node}]</span>
-                  <span className="text-neutral-300">{msg.message}</span>
+                  <span className="text-accent-blue shrink-0">[{msg.node}]</span>
+                  <span className="text-light/70">{msg.message}</span>
                 </div>
               ))
             )}

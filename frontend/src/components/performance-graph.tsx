@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import {
   ReactFlow,
   Background,
@@ -19,18 +19,68 @@ interface PerformanceGraphProps {
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
-  critical: "#ef4444",
-  high: "#f97316",
-  medium: "#eab308",
-  low: "#22c55e",
+  critical: "var(--color-accent-red)",
+  high: "var(--color-accent-orange)",
+  medium: "var(--color-accent-purple)",
+  low: "var(--color-accent-green)",
 };
 
+const SEVERITY_LABELS: { key: string; cls: string }[] = [
+  { key: "critical", cls: "bg-accent-red" },
+  { key: "high", cls: "bg-accent-orange" },
+  { key: "medium", cls: "bg-accent-purple" },
+  { key: "low", cls: "bg-accent-green" },
+];
+
 export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
+  const nodes: Node[] = useMemo(() => {
+    if (!graphData) return [];
+    return graphData.nodes.map((n) => ({
+      id: n.id,
+      position: { x: n.position_x, y: n.position_y },
+      data: {
+        label: (
+          <div className="text-xs space-y-1">
+            <div className="font-semibold">{n.label}</div>
+            <div className="text-[10px] opacity-50">{n.file}</div>
+            {n.avg_time_ms != null && (
+              <div className="text-[10px]">{n.avg_time_ms.toFixed(1)}ms</div>
+            )}
+            {n.memory_mb != null && (
+              <div className="text-[10px]">{n.memory_mb.toFixed(1)}MB</div>
+            )}
+          </div>
+        ),
+      },
+      style: {
+        background: "var(--color-dark)",
+        border: `2px solid ${SEVERITY_COLORS[n.severity || "low"] || "rgba(245,240,232,0.15)"}`,
+        borderRadius: "8px",
+        padding: "12px",
+        color: "var(--color-light)",
+        minWidth: "140px",
+      },
+    }));
+  }, [graphData]);
+
+  const edges: Edge[] = useMemo(() => {
+    if (!graphData) return [];
+    return graphData.edges.map((e, i) => ({
+      id: `e-${i}`,
+      source: e.source,
+      target: e.target,
+      label: e.label,
+      style: { stroke: "rgba(245, 240, 232, 0.2)" },
+      labelStyle: { fill: "rgba(245, 240, 232, 0.5)", fontSize: 10 },
+      animated: true,
+    }));
+  }, [graphData]);
+
   if (!graphData) {
     return (
-      <Card className="bg-neutral-900 border-neutral-800">
+      <Card className="bg-light/5">
         <CardHeader>
-          <CardTitle className="text-sm text-neutral-400">
+          <CardTitle className="text-sm text-light/50">
             Performance Graph
           </CardTitle>
         </CardHeader>
@@ -43,86 +93,37 @@ export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
     );
   }
 
-  const nodes: Node[] = useMemo(
-    () =>
-      graphData.nodes.map((n) => ({
-        id: n.id,
-        position: { x: n.position_x, y: n.position_y },
-        data: {
-          label: (
-            <div className="text-xs space-y-1">
-              <div className="font-semibold">{n.label}</div>
-              <div className="text-[10px] text-neutral-400">{n.file}</div>
-              {n.avg_time_ms != null && (
-                <div className="text-[10px]">{n.avg_time_ms.toFixed(1)}ms</div>
-              )}
-              {n.memory_mb != null && (
-                <div className="text-[10px]">{n.memory_mb.toFixed(1)}MB</div>
-              )}
-            </div>
-          ),
-        },
-        style: {
-          background: "#1a1a1a",
-          border: `2px solid ${SEVERITY_COLORS[n.severity || "low"] || "#404040"}`,
-          borderRadius: "8px",
-          padding: "12px",
-          color: "#e5e5e5",
-          minWidth: "140px",
-        },
-      })),
-    [graphData.nodes]
-  );
-
-  const edges: Edge[] = useMemo(
-    () =>
-      graphData.edges.map((e, i) => ({
-        id: `e-${i}`,
-        source: e.source,
-        target: e.target,
-        label: e.label,
-        style: { stroke: "#525252" },
-        labelStyle: { fill: "#a3a3a3", fontSize: 10 },
-        animated: true,
-      })),
-    [graphData.edges]
-  );
-
   return (
-    <Card className="bg-neutral-900 border-neutral-800">
+    <Card className="bg-light/5">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-neutral-400 flex items-center justify-between">
+        <CardTitle className="text-sm text-light/50 flex items-center justify-between">
           Performance Graph
           <div className="flex items-center gap-3 text-[10px]">
-            {Object.entries(SEVERITY_COLORS).map(([label, color]) => (
-              <div key={label} className="flex items-center gap-1">
-                <div
-                  className="w-2.5 h-2.5 rounded-full"
-                  style={{ backgroundColor: color }}
-                />
-                <span className="capitalize">{label}</span>
+            {SEVERITY_LABELS.map(({ key, cls }) => (
+              <div key={key} className="flex items-center gap-1">
+                <div className={`w-2.5 h-2.5 rounded-full ${cls}`} />
+                <span className="capitalize">{key}</span>
               </div>
             ))}
           </div>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-[500px] rounded-lg overflow-hidden bg-neutral-950">
+        <div className="h-[500px] rounded-lg overflow-hidden bg-dark">
           <ReactFlow
             nodes={nodes}
             edges={edges}
             fitView
             proOptions={{ hideAttribution: true }}
           >
-            <Background color="#262626" gap={20} />
-            <Controls className="bg-neutral-800 border-neutral-700 rounded" />
+            <Background color="rgba(245, 240, 232, 0.06)" gap={20} />
+            <Controls />
             <MiniMap
-              className="bg-neutral-900 border-neutral-800 rounded"
               nodeColor={(n) => {
                 const severity = graphData.nodes.find(
                   (gn) => gn.id === n.id
                 )?.severity;
-                return SEVERITY_COLORS[severity || "low"] || "#404040";
+                return SEVERITY_COLORS[severity || "low"] || "rgba(245,240,232,0.15)";
               }}
             />
           </ReactFlow>

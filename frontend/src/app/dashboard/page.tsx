@@ -10,7 +10,6 @@ import { ScoreDashboard } from "@/components/score-dashboard";
 import { PullRequestView } from "@/components/comparison-view";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
 import { startAnalysis, streamJob, getResults, type JobResult } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -121,99 +120,137 @@ export default function DashboardPage() {
     [session, phase]
   );
 
+  const statusText =
+    phase === "idle"
+      ? "● [✓] ready · select a repository"
+      : phase === "complete"
+      ? "● [✓] analysis complete"
+      : phase === "error"
+      ? "● [✗] error encountered"
+      : `● [◎] ${phase}…`;
+
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-neutral-500">Loading...</div>
+      <div className="h-screen bg-light p-3 sm:p-4 flex flex-col">
+        <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex items-center justify-center">
+          <span className="animate-pulse text-light/40 font-mono text-sm">loading…</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-neutral-800 px-6 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-semibold tracking-tight">
-          Benchy
-        </h1>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-neutral-500">
-            {session?.user?.name}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => signOut({ callbackUrl: "/" })}
-          >
-            Sign out
-          </Button>
-        </div>
-      </header>
-
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
-        <RepoInput
-          onAnalyze={handleAnalyze}
-          isLoading={phase !== "idle" && phase !== "complete" && phase !== "error"}
-          accessToken={(session as any)?.accessToken ?? null}
-        />
-
-        {phase !== "idle" && (
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="bg-neutral-900 border border-neutral-800">
-              <TabsTrigger value="telemetry">Live Telemetry</TabsTrigger>
-              <TabsTrigger value="graph">Performance Graph</TabsTrigger>
-              <TabsTrigger value="results" disabled={!results}>
-                Results
-              </TabsTrigger>
-              <TabsTrigger value="pr" disabled={!results}>
-                Pull Request
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="telemetry" className="mt-4">
-              <ErrorBoundary>
-                <LiveTelemetry phase={phase} messages={messages} />
-              </ErrorBoundary>
-            </TabsContent>
-
-            <TabsContent value="graph" className="mt-4">
-              <ErrorBoundary>
-                <PerformanceGraph graphData={results?.graph_data ?? null} />
-              </ErrorBoundary>
-            </TabsContent>
-
-            <TabsContent value="results" className="mt-4">
-              <ErrorBoundary>
-                {results?.comparison && (
-                  <ScoreDashboard comparison={results.comparison} />
-                )}
-              </ErrorBoundary>
-            </TabsContent>
-
-            <TabsContent value="pr" className="mt-4">
-              <ErrorBoundary>
-                {results && (
-                  <PullRequestView
-                    prUrl={results.pr_url ?? ""}
-                    optimizedFiles={results.optimized_files ?? {}}
-                    comparison={results.comparison ?? null}
-                    prStatus={results.pr_status}
-                    prError={results.pr_error}
-                  />
-                )}
-              </ErrorBoundary>
-            </TabsContent>
-          </Tabs>
-        )}
-
-        {phase === "idle" && (
-          <div className="text-center py-20 text-neutral-600">
-            <p className="text-lg">Select a repository to get started</p>
-            <p className="text-sm mt-2">
-              We&apos;ll analyze the codebase, benchmark performance, and optimize bottlenecks
-            </p>
+    <div className="h-screen bg-light p-3 sm:p-4 flex flex-col">
+      <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden">
+        <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
+          <a href="/" className="font-serif text-xl hover:text-light/80 transition-colors">
+            Benchy
+          </a>
+          <div className="flex items-center gap-6">
+            <span className="text-xs font-mono text-light/40">
+              {session?.user?.name}
+            </span>
+            <a
+              href="/debug"
+              className="text-xs font-mono text-light/40 hover:text-light/70 transition-colors"
+            >
+              /debug
+            </a>
+            <button
+              onClick={() => signOut({ callbackUrl: "/" })}
+              className="text-xs font-mono text-light/60 hover:text-light transition-colors"
+            >
+              sign out →
+            </button>
           </div>
-        )}
-      </main>
+        </nav>
+
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 sm:px-10 py-8">
+          <div className="max-w-7xl mx-auto w-full space-y-6">
+            <RepoInput
+              onAnalyze={handleAnalyze}
+              isLoading={phase !== "idle" && phase !== "complete" && phase !== "error"}
+              accessToken={(session as any)?.accessToken ?? null}
+            />
+
+            {phase !== "idle" && (
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="bg-light/5 border border-light/10">
+                  <TabsTrigger value="telemetry">Live Telemetry</TabsTrigger>
+                  <TabsTrigger value="graph">Performance Graph</TabsTrigger>
+                  <TabsTrigger value="results" disabled={!results}>
+                    Results
+                  </TabsTrigger>
+                  <TabsTrigger value="pr" disabled={!results}>
+                    Pull Request
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="telemetry" className="mt-4">
+                  <ErrorBoundary>
+                    <LiveTelemetry phase={phase} messages={messages} />
+                  </ErrorBoundary>
+                </TabsContent>
+
+                <TabsContent value="graph" className="mt-4">
+                  <ErrorBoundary>
+                    <PerformanceGraph graphData={results?.graph_data ?? null} />
+                  </ErrorBoundary>
+                </TabsContent>
+
+                <TabsContent value="results" className="mt-4">
+                  <ErrorBoundary>
+                    {results?.comparison && (
+                      <ScoreDashboard comparison={results.comparison} />
+                    )}
+                  </ErrorBoundary>
+                </TabsContent>
+
+                <TabsContent value="pr" className="mt-4">
+                  <ErrorBoundary>
+                    {results && (
+                      <PullRequestView
+                        prUrl={results.pr_url ?? ""}
+                        optimizedFiles={results.optimized_files ?? {}}
+                        comparison={results.comparison ?? null}
+                        prStatus={results.pr_status}
+                        prError={results.pr_error}
+                      />
+                    )}
+                  </ErrorBoundary>
+                </TabsContent>
+              </Tabs>
+            )}
+
+            {phase === "idle" && (
+              <div className="text-center py-20">
+                <p className="text-lg text-light/30">Select a repository to get started</p>
+                <p className="text-sm mt-2 text-light/20">
+                  We&apos;ll analyze the codebase, benchmark performance, and optimize bottlenecks
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                phase === "idle" || phase === "complete"
+                  ? "bg-accent-green"
+                  : phase === "error"
+                  ? "bg-accent-red"
+                  : "bg-accent-orange animate-pulse"
+              }`}
+            />
+            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
+            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
+          </div>
+          <p className="font-mono text-[11px] text-light/30">{statusText}</p>
+          <span className="w-2 h-2 rounded-full bg-light/20" />
+        </div>
+      </div>
     </div>
   );
 }
