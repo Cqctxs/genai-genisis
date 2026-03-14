@@ -127,6 +127,7 @@ def _parse_benchmark_output(
 
     try:
         parsed = json.loads(stdout.strip().split("\n")[-1])
+        fingerprint = parsed.get("validation_fingerprint")
         bench_result = BenchmarkResult(
             function_name=parsed.get("function", bench.target_function),
             file=bench.file,
@@ -134,6 +135,7 @@ def _parse_benchmark_output(
             memory_peak_mb=float(parsed.get("memory_peak_mb", 0)),
             iterations=int(parsed.get("iterations", 0)),
             raw_output=stdout,
+            validation_fingerprint=fingerprint,
         )
         log.info(
             "benchmark_parsed",
@@ -141,6 +143,7 @@ def _parse_benchmark_output(
             avg_time_ms=bench_result.avg_time_ms,
             memory_peak_mb=bench_result.memory_peak_mb,
             iterations=bench_result.iterations,
+            validation_fingerprint=fingerprint,
         )
         return bench_result.model_dump(), None
     except (json.JSONDecodeError, IndexError, ValueError) as parse_err:
@@ -239,6 +242,44 @@ async def _execute_single_benchmark(
     return result
 
 
+def compare_fingerprints(
+    initial_results: list[dict],
+    final_results: list[dict],
+) -> list[dict]:
+    """Compare validation fingerprints between initial and final benchmark runs.
+
+    Returns a list of dicts describing each mismatch:
+      {"function_name": ..., "file": ..., "initial_fp": ..., "final_fp": ...}
+    """
+    initial_map: dict[str, str | None] = {}
+    for r in initial_results:
+        key = r.get("function_name", "")
+        fp = r.get("validation_fingerprint")
+        if key and fp:
+            initial_map[key] = fp
+
+    failures: list[dict] = []
+    for r in final_results:
+        fn = r.get("function_name", "")
+        final_fp = r.get("validation_fingerprint")
+        initial_fp = initial_map.get(fn)
+
+        if initial_fp is None or final_fp is None:
+            continue
+
+        if initial_fp != final_fp:
+            failure = {
+                "function_name": fn,
+                "file": r.get("file", ""),
+                "initial_fingerprint": initial_fp,
+                "final_fingerprint": final_fp,
+            }
+            log.warning("correctness_mismatch", **failure)
+            failures.append(failure)
+
+    return failures
+
+
 async def run_benchmarks_node(state: AgentState) -> dict:
     """Execute benchmark scripts in Modal sandboxes in parallel and collect results."""
     benchmarks = [BenchmarkScript(**b) for b in state.get("benchmark_code", [])]
@@ -294,10 +335,33 @@ async def run_benchmarks_node(state: AgentState) -> dict:
         ],
     )
 
-    return {
+    update: dict = {
         **state,
         results_key: results,
         "messages": state.get("messages", []) + [
             f"Completed {len(results)} benchmarks"
         ],
     }
+
+    if results_key == "final_results":
+        initial_results = state.get("initial_results", [])
+        failures = compare_fingerprints(initial_results, results)
+        if failures:
+            failed_fns = [f["function_name"] for f in failures]
+            log.warning(
+                "correctness_failures_detected",
+                count=len(failures),
+                functions=failed_fns,
+            )
+            update["correctness_failures"] = failures
+            update["messages"] = update["messages"] + [
+                f"Correctness check: {len(failures)} function(s) changed behavior: {', '.join(failed_fns)}"
+            ]
+        else:
+            matched = sum(
+                1 for r in results if r.get("validation_fingerprint")
+            )
+            log.info("correctness_check_passed", fingerprints_matched=matched)
+            update["correctness_failures"] = []
+
+    return update

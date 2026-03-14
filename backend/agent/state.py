@@ -12,9 +12,11 @@ class AgentState(TypedDict, total=False):
     initial_results: list[dict[str, Any]]
     graph_data: dict[str, Any]
     optimized_files: dict[str, str]
+    original_files: dict[str, str]
     final_results: list[dict[str, Any]]
     triage_result: dict[str, Any]
     comparison: dict[str, Any]
+    correctness_failures: list[dict[str, Any]]
     pr_url: str
     messages: list[str]
     error: str | None

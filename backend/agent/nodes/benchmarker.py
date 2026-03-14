@@ -27,18 +27,41 @@ The benchmark script runs inside an isolated sandbox where:
 
 - Do NOT include any memory measurement code. No tracemalloc, no memory_profiler,
   no process.memoryUsage(). Memory is measured automatically by the runtime wrapper.
-- Focus ONLY on timing.
+- Focus ONLY on timing and correctness fingerprinting.
+
+## Correctness Fingerprinting (REQUIRED)
+
+After timing, you MUST generate a `validation_fingerprint` to verify the function's output
+has not changed. This is critical for detecting when optimizations break functionality.
+
+1. Before the timing loop, call the function ONCE with a fixed, deterministic input.
+2. Capture the return value (or the mutated state if the function returns void).
+3. Serialize the result into a stable string representation:
+   - For Python: use `json.dumps(result, sort_keys=True, default=str)`
+   - For JavaScript: use `JSON.stringify(result)` (with sorted keys if it's an object)
+4. Hash the serialized string to produce a short fingerprint:
+   - For Python: `import hashlib; fingerprint = hashlib.sha256(serialized.encode()).hexdigest()[:16]`
+   - For JavaScript: use `require('crypto').createHash('sha256').update(serialized).digest('hex').slice(0, 16)`
+5. Include the fingerprint in the output JSON as `"validation_fingerprint": "<hex_string>"`.
+
+DETERMINISM RULES:
+- If the function uses randomness, seed the RNG before the fingerprint call (e.g. Math.random seed, random.seed(42)).
+- If the function uses Date/time, mock it to a fixed value.
+- If the function reads from network/DB, use the same mock data.
+- The fingerprint MUST be identical across runs with the same code. If it is not deterministic, the system will incorrectly flag the optimization as broken.
+
+## Output Format
 
 For Python: Use time.perf_counter() or timeit to measure execution time. Write scripts that
 import the target functions from the repo, set up minimal realistic test data, run multiple
 iterations, and output a single JSON object on the LAST line of stdout:
-{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
+{"function": "name", "avg_time_ms": 123.4, "iterations": 100, "validation_fingerprint": "a1b2c3d4e5f6a7b8"}
 
 For JavaScript/TypeScript: Use require() (CommonJS) NOT import (ESM). The sandbox runs
 scripts with plain `node` in CommonJS mode. Use `const { performance } = require("perf_hooks")`
 for timing. Write scripts that require target functions from the repo, set up test data,
 run multiple iterations, and output a single JSON object on the LAST line of stdout:
-{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
+{"function": "name", "avg_time_ms": 123.4, "iterations": 100, "validation_fingerprint": "a1b2c3d4e5f6a7b8"}
 
 Any debug/progress output must go to stderr or earlier stdout lines — the LAST line of stdout
 must be the JSON result object and nothing else."""

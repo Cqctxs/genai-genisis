@@ -36,6 +36,41 @@ function AnimatedScore({ target, duration = 2 }: { target: number; duration?: nu
   return <span>{value.toLocaleString()}</span>;
 }
 
+function SubScoreBar({
+  label,
+  value,
+  max,
+  weight,
+  color,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  weight: string;
+  color: string;
+}) {
+  const pct = Math.min((value / max) * 100, 100);
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-light/60">{label}</span>
+        <span className="text-light/40 tabular-nums">
+          {value.toLocaleString()} <span className="text-light/25">· {weight}</span>
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-light/10 overflow-hidden">
+        <motion.div
+          className="h-full rounded-full"
+          style={{ backgroundColor: color }}
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 1.2, ease: "easeOut", delay: 0.3 }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function MetricCard({
   label,
   before,
@@ -69,6 +104,63 @@ function MetricCard({
   );
 }
 
+function ScoreExplanation() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="text-center">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-[11px] text-light/30 hover:text-light/50 transition-colors inline-flex items-center gap-1"
+      >
+        How is this score calculated?
+        <svg
+          className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+      </button>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          className="mt-3 text-left max-w-lg mx-auto space-y-2 text-[11px] text-light/40 leading-relaxed"
+        >
+          <p>
+            The <span className="text-light/60 font-medium">CodeMark Score</span> ranges
+            from <span className="text-light/60">0 to 20,000</span>. A typical unoptimized
+            project scores between 5,000 and 8,000. Higher is better.
+          </p>
+          <p>The score is composed of three weighted sub-scores:</p>
+          <ul className="list-none space-y-1 pl-0">
+            <li>
+              <span className="text-accent-blue font-medium">Time (40%)</span> — Faster
+              function execution produces a higher score.
+            </li>
+            <li>
+              <span className="text-accent-green font-medium">Memory (30%)</span> — Lower
+              peak memory usage produces a higher score.
+            </li>
+            <li>
+              <span className="text-accent-purple font-medium">Complexity (30%)</span> — Better
+              algorithmic complexity (e.g. O(n) vs O(n²)) produces a higher score.
+            </li>
+          </ul>
+          <p>
+            Benchmarks run inside isolated cloud containers with fixed hardware,
+            ensuring reproducible measurements across runs.
+          </p>
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
 export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
   const { benchy_score, functions, summary, sandbox_specs } = comparison;
 
@@ -87,7 +179,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
         <CardContent className="py-8">
           <div className="text-center space-y-4">
             <p className="text-xs uppercase tracking-widest text-light/40">
-              Benchy Score
+              CodeMark Score
             </p>
             <div className="flex items-center justify-center gap-6">
               <div className="text-2xl text-light/40">
@@ -111,6 +203,32 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 <AnimatedScore target={benchy_score.overall_after} />
               </motion.div>
             </div>
+
+            <div className="max-w-xs mx-auto space-y-2 pt-2">
+              <SubScoreBar
+                label="Time"
+                value={benchy_score.time_score}
+                max={20000}
+                weight="40%"
+                color="var(--color-accent-blue)"
+              />
+              <SubScoreBar
+                label="Memory"
+                value={benchy_score.memory_score}
+                max={20000}
+                weight="30%"
+                color="var(--color-accent-green)"
+              />
+              <SubScoreBar
+                label="Complexity"
+                value={benchy_score.complexity_score}
+                max={20000}
+                weight="30%"
+                color="var(--color-accent-purple)"
+              />
+            </div>
+
+            <ScoreExplanation />
           </div>
         </CardContent>
       </Card>
@@ -244,9 +362,25 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
       )}
 
       {sandbox_specs && (
-        <p className="text-[10px] text-light/30 text-center">
-          Benchmarked on {sandbox_specs}
-        </p>
+        <Card className="bg-light/5">
+          <CardContent className="py-3">
+            <div className="flex items-start gap-2">
+              <svg
+                className="w-3.5 h-3.5 text-light/25 mt-0.5 shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008zm-3 6h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008z" />
+              </svg>
+              <div className="space-y-1">
+                <p className="text-[11px] text-light/40 font-medium">Benchmark Environment</p>
+                <p className="text-[10px] text-light/25 leading-relaxed">{sandbox_specs}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

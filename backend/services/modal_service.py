@@ -356,4 +356,16 @@ async def run_benchmark(
 
 async def get_sandbox_specs() -> str:
     """Return a description of the Modal sandbox environment."""
-    return "Modal Cloud Container - Python 3.12, isolated execution"
+    py_specs = (
+        "Python sandbox: Debian Slim, Python 3.12, "
+        "1 vCPU (AMD EPYC, shared), 256 MiB RAM"
+    )
+    js_specs = (
+        "JavaScript sandbox: Debian Slim, Node.js (system), "
+        "1 vCPU (AMD EPYC, shared), 256 MiB RAM"
+    )
+    return (
+        f"Modal Cloud (AWS us-east-1) · "
+        f"{py_specs} · {js_specs} · "
+        f"Isolated per-run containers, no GPU"
+    )

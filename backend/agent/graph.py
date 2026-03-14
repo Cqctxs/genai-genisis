@@ -18,7 +18,7 @@ from services.log_utils import log_block
 
 log = structlog.get_logger()
 
-MAX_OPTIMIZATION_RETRIES = 1
+MAX_OPTIMIZATION_RETRIES = 2
 
 
 async def clone_node(state: AgentState) -> dict:
@@ -66,6 +66,16 @@ async def rerun_benchmarks_node(state: AgentState) -> dict:
 
     log.info("rerun_benchmarks_start", num_optimized_files=len(optimized_files))
 
+    # Snapshot original file contents before the first overwrite so we can
+    # revert individual files that fail the correctness check.
+    original_files = state.get("original_files", {})
+    if not original_files:
+        for rel_path in optimized_files:
+            full_path = os.path.join(repo_path, rel_path)
+            if os.path.exists(full_path):
+                with open(full_path, "r", encoding="utf-8") as f:
+                    original_files[rel_path] = f.read()
+
     for rel_path, content in optimized_files.items():
         full_path = os.path.join(repo_path, rel_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
@@ -79,17 +89,45 @@ async def rerun_benchmarks_node(state: AgentState) -> dict:
 
     return {
         **state,
+        "original_files": original_files,
         "final_results": result.get("final_results", result.get("initial_results", [])),
+        "correctness_failures": result.get("correctness_failures", []),
         "retry_count": state.get("retry_count", 0) + 1,
         "messages": state.get("messages", []) + ["Re-ran benchmarks on optimized code"],
     }
 
 
+def _revert_broken_files(state: AgentState) -> dict[str, str]:
+    """Revert optimized files that failed correctness back to originals.
+
+    Returns the cleaned optimized_files dict (broken files replaced with originals).
+    """
+    failures = state.get("correctness_failures", [])
+    original_files = state.get("original_files", {})
+    optimized_files = dict(state.get("optimized_files", {}))
+
+    broken_files = {f["file"] for f in failures}
+    for file_path in broken_files:
+        if file_path in original_files:
+            optimized_files[file_path] = original_files[file_path]
+            log.info("correctness_reverted_file", file=file_path)
+        else:
+            optimized_files.pop(file_path, None)
+            log.warning("correctness_revert_no_original", file=file_path)
+
+    return optimized_files
+
+
 def should_retry(state: AgentState) -> str:
-    """Decide whether to retry optimization or finalize."""
+    """Decide whether to retry optimization or finalize.
+
+    Correctness failures always trigger a retry (up to max retries).
+    On the final retry, broken files are reverted to originals.
+    """
     initial = state.get("initial_results", [])
     final = state.get("final_results", [])
     retry_count = state.get("retry_count", 0)
+    correctness_failures = state.get("correctness_failures", [])
 
     initial_total = sum(r.get("avg_time_ms", 0) for r in initial)
     final_total = sum(r.get("avg_time_ms", 0) for r in final)
@@ -97,7 +135,13 @@ def should_retry(state: AgentState) -> str:
     decision = "report"
     reason = ""
 
-    if retry_count >= MAX_OPTIMIZATION_RETRIES:
+    if correctness_failures and retry_count < MAX_OPTIMIZATION_RETRIES:
+        failed_fns = [f["function_name"] for f in correctness_failures]
+        decision = "optimize"
+        reason = f"correctness failures in {failed_fns}, retrying optimization"
+    elif correctness_failures and retry_count >= MAX_OPTIMIZATION_RETRIES:
+        reason = f"correctness failures remain after max retries, reverting broken files"
+    elif retry_count >= MAX_OPTIMIZATION_RETRIES:
         reason = f"max retries reached ({retry_count})"
     elif not initial or not final:
         reason = f"missing results (initial={len(initial)}, final={len(final)})"
@@ -118,7 +162,13 @@ def should_retry(state: AgentState) -> str:
         retry_count=retry_count,
         initial_total_ms=initial_total,
         final_total_ms=final_total,
+        correctness_failures=len(correctness_failures),
     )
+
+    # If we're done retrying but still have correctness failures, revert broken files
+    if decision == "report" and correctness_failures:
+        reverted = _revert_broken_files(state)
+        state["optimized_files"] = reverted  # type: ignore[typeddict-unknown-key]
 
     return decision
 

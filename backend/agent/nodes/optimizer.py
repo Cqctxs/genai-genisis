@@ -39,9 +39,13 @@ async def _optimize_file(
     file_content: str,
     hotspots: list[Hotspot],
     benchmark_results: list[dict],
+    correctness_failures: list[dict] | None = None,
 ) -> tuple[str, list[OptimizationChange], str]:
-    """Optimize a single file's hotspots. Returns (file_path, changes, optimized_content)."""
-    # Filter benchmark results to this file
+    """Optimize a single file's hotspots. Returns (file_path, changes, optimized_content).
+
+    If correctness_failures is provided, the prompt focuses on fixing the broken
+    functions while preserving the performance optimization intent.
+    """
     file_results = [r for r in benchmark_results if r.get("file") == file_path]
 
     agent = get_agent(OptimizationPlan, OPTIMIZER_PROMPT, GEMINI_PRO)
@@ -52,6 +56,32 @@ async def _optimize_file(
         for h in hotspots
     ]
 
+    # Build correctness context if this file has failures from a previous attempt
+    correctness_section = ""
+    if correctness_failures:
+        file_failures = [f for f in correctness_failures if f.get("file") == file_path]
+        if file_failures:
+            correctness_section = f"""
+## CORRECTNESS FAILURE (CRITICAL — must fix)
+
+Your previous optimization broke the following function(s). The output fingerprint
+changed, meaning the function now returns DIFFERENT results for the same input.
+You MUST fix these while still optimizing for performance.
+
+```json
+{json.dumps(file_failures, indent=2)}
+```
+
+- `initial_fingerprint` = the correct output hash from the original code.
+- `final_fingerprint` = the broken output hash from your previous optimization.
+
+Rules:
+- The optimized code MUST produce the EXACT same output as the original for any input.
+- If you cannot optimize a function without changing its output, leave it unchanged.
+- Focus on structural/algorithmic improvements that preserve semantics (memoization,
+  caching, reducing allocations, batching) rather than logic changes.
+"""
+
     prompt = f"""## Bottlenecks in {file_path}
 ```json
 {json.dumps(hotspot_info, indent=2)}
@@ -61,7 +91,7 @@ async def _optimize_file(
 ```json
 {json.dumps(file_results, indent=2)}
 ```
-
+{correctness_section}
 ## Source File: {file_path}
 ```
 {file_content[:8000]}
@@ -97,13 +127,22 @@ async def optimize_node(state: AgentState) -> dict:
     analysis = AnalysisResult(**state.get("analysis", {}))
     initial_results = state.get("initial_results", [])
     repo_path = state.get("repo_path", "")
+    correctness_failures = state.get("correctness_failures", [])
 
-    # Group hotspots by file
     file_hotspots: dict[str, list[Hotspot]] = {}
     for hotspot in analysis.hotspots:
         file_hotspots.setdefault(hotspot.file, []).append(hotspot)
 
-    # Read affected files
+    # When retrying due to correctness failures, only re-optimize the broken files
+    if correctness_failures:
+        broken_files = {f["file"] for f in correctness_failures}
+        file_hotspots = {k: v for k, v in file_hotspots.items() if k in broken_files}
+        log.info(
+            "optimize_correctness_retry",
+            broken_files=list(broken_files),
+            hotspots_to_fix=sum(len(v) for v in file_hotspots.values()),
+        )
+
     affected_files: dict[str, str] = {}
     for file_path in file_hotspots:
         try:
@@ -113,19 +152,23 @@ async def optimize_node(state: AgentState) -> dict:
 
     log.info(
         "optimize_start",
-        num_hotspots=len(analysis.hotspots),
+        num_hotspots=sum(len(v) for v in file_hotspots.values()),
         num_files=len(affected_files),
         affected_files=list(affected_files.keys()),
+        has_correctness_failures=bool(correctness_failures),
     )
 
-    # Optimize each file in parallel
     tasks = [
-        _optimize_file(file_path, content, file_hotspots[file_path], initial_results)
+        _optimize_file(
+            file_path, content, file_hotspots[file_path], initial_results,
+            correctness_failures=correctness_failures,
+        )
         for file_path, content in affected_files.items()
     ]
     results = await asyncio.gather(*tasks)
 
-    optimized_files = {}
+    # Merge: keep previous optimizations for files NOT being re-optimized
+    optimized_files = dict(state.get("optimized_files", {}))
     total_changes = 0
     for file_path, changes, optimized_content in results:
         optimized_files[file_path] = optimized_content
