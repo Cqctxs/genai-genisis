@@ -33,11 +33,11 @@ Optimization strategies to consider:
 Be precise: only modify code that actually impacts performance. Preserve correctness."""
 
 
-async def optimize_node(state: AgentState) -> AgentState:
+async def optimize_node(state: AgentState) -> dict:
     """Generate optimized code for identified bottlenecks."""
-    analysis = AnalysisResult(**state["analysis"])
+    analysis = AnalysisResult(**state.get("analysis", {}))
     initial_results = state.get("initial_results", [])
-    repo_path = state["repo_path"]
+    repo_path = state.get("repo_path", "")
 
     affected_files = {}
     for hotspot in analysis.hotspots:
@@ -66,9 +66,10 @@ async def optimize_node(state: AgentState) -> AgentState:
 
     log.info("optimizing_code", num_hotspots=len(analysis.hotspots))
     result = await agent.run(prompt)
+    plan: OptimizationPlan = result.output  # type: ignore[assignment]
 
     optimized_files = dict(affected_files)
-    for change in result.output.changes:
+    for change in plan.changes:
         if change.file in optimized_files:
             optimized_files[change.file] = optimized_files[change.file].replace(
                 change.original_snippet, change.optimized_snippet
@@ -78,6 +79,6 @@ async def optimize_node(state: AgentState) -> AgentState:
         **state,
         "optimized_files": optimized_files,
         "messages": state.get("messages", []) + [
-            f"Generated {len(result.output.changes)} optimizations"
+            f"Generated {len(plan.changes)} optimizations"
         ],
     }

@@ -61,6 +61,22 @@ export default function LandingPage() {
         </Button>
       </div>
 
+      <div className="mt-12 w-full max-w-md space-y-4 border border-neutral-800 rounded-lg p-6">
+        <p className="text-xs uppercase tracking-widest text-neutral-500 mb-4">Font Test</p>
+        <div className="space-y-1">
+          <p className="text-xs text-neutral-500">font-sans (Inter):</p>
+          <p className="font-sans text-2xl">The quick brown fox jumps over the lazy dog</p>
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs text-neutral-500">font-serif (Junicode Bold Italic):</p>
+          <p className="font-serif text-2xl">The quick brown fox jumps over the lazy dog</p>
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs text-neutral-500">font-mono (Geist Mono):</p>
+          <p className="font-mono text-2xl">The quick brown fox jumps over the lazy dog</p>
+        </div>
+      </div>
+
       <footer className="absolute bottom-8 text-xs text-neutral-600">
         Built with LangGraph + Gemini + Modal
       </footer>

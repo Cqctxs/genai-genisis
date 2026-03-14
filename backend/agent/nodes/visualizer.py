@@ -2,7 +2,7 @@ import json
 
 import structlog
 
-from agent.schemas import BenchmarkResult, GraphData
+from agent.schemas import GraphData
 from agent.state import AgentState
 from services.gemini_service import GEMINI_PRO, get_agent
 
@@ -23,9 +23,9 @@ Rules:
 The output must be valid GraphData with nodes and edges arrays."""
 
 
-async def visualize_node(state: AgentState) -> AgentState:
+async def visualize_node(state: AgentState) -> dict:
     """Transform AST map and benchmark results into React Flow graph data."""
-    ast_map = state["ast_map"]
+    ast_map = state.get("ast_map", {})
     initial_results = state.get("initial_results", [])
 
     agent = get_agent(GraphData, VISUALIZER_PROMPT, GEMINI_PRO)
@@ -44,11 +44,12 @@ Generate the React Flow graph data."""
 
     log.info("generating_visualization")
     result = await agent.run(prompt)
+    graph_data: GraphData = result.output  # type: ignore[assignment]
 
     return {
         **state,
-        "graph_data": result.output.model_dump(),
+        "graph_data": graph_data.model_dump(),
         "messages": state.get("messages", []) + [
-            f"Generated visualization with {len(result.output.nodes)} nodes and {len(result.output.edges)} edges"
+            f"Generated visualization with {len(graph_data.nodes)} nodes and {len(graph_data.edges)} edges"
         ],
     }
