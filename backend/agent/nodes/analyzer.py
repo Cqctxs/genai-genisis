@@ -69,6 +69,9 @@ INPUT SIZE — THIS IS CRITICAL:
 - NEVER use trivially small inputs (N < 100). Small inputs hide algorithmic improvements
   behind constant-factor overhead and produce misleading benchmark results.
 - Run at least 50 iterations to get a stable average.
+- TOTAL SCRIPT EXECUTION MUST COMPLETE WITHIN 30 SECONDS. If the function is slow,
+  reduce the number of iterations (minimum 5) or input size until total runtime stays under 30s.
+  Use a warm-up call to estimate per-call cost, then choose iterations accordingly.
 
 For Python: Use time.perf_counter() for timing. Copy the target function into the script,
 set up realistic-sized test data (see INPUT SIZE above), and measure execution time.
