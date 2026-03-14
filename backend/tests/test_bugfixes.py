@@ -17,8 +17,8 @@ pytestmark = pytest.mark.anyio
 # ---------------------------------------------------------------------------
 
 
-class TestShouldRetry:
-    """Verify the conditional-edge function honours retry_count."""
+class TestShouldStopRetrying:
+    """Verify _should_stop_retrying honours retry_count and result quality."""
 
     def _make_state(self, **overrides):
         from agent.state import AgentState
@@ -31,56 +31,62 @@ class TestShouldRetry:
         base.update(overrides)
         return base
 
-    def test_returns_report_when_retry_count_exceeds_max(self):
-        from agent.graph import should_retry, MAX_OPTIMIZATION_RETRIES
+    def test_stops_when_retry_count_exceeds_max(self):
+        from agent.graph import _should_stop_retrying, MAX_OPTIMIZATION_RETRIES
 
         state = self._make_state(retry_count=MAX_OPTIMIZATION_RETRIES)
-        assert should_retry(state) == "report"
+        should_stop, _ = _should_stop_retrying(state)
+        assert should_stop is True
 
-    def test_returns_report_when_retry_count_equals_max(self):
-        from agent.graph import should_retry, MAX_OPTIMIZATION_RETRIES
+    def test_stops_when_retry_count_equals_max(self):
+        from agent.graph import _should_stop_retrying, MAX_OPTIMIZATION_RETRIES
 
         state = self._make_state(retry_count=MAX_OPTIMIZATION_RETRIES)
-        assert should_retry(state) == "report"
+        should_stop, _ = _should_stop_retrying(state)
+        assert should_stop is True
 
-    def test_returns_optimize_when_no_improvement_and_retries_left(self):
-        from agent.graph import should_retry
+    def test_retries_when_no_improvement_and_retries_left(self):
+        from agent.graph import _should_stop_retrying
 
         state = self._make_state(
             initial_results=[{"avg_time_ms": 100}],
             final_results=[{"avg_time_ms": 200}],
             retry_count=0,
         )
-        assert should_retry(state) == "optimize"
+        should_stop, _ = _should_stop_retrying(state)
+        assert should_stop is False
 
-    def test_returns_report_when_improvement_achieved(self):
-        from agent.graph import should_retry
+    def test_stops_when_improvement_achieved(self):
+        from agent.graph import _should_stop_retrying
 
         state = self._make_state(
             initial_results=[{"avg_time_ms": 200}],
             final_results=[{"avg_time_ms": 100}],
             retry_count=0,
         )
-        assert should_retry(state) == "report"
+        should_stop, _ = _should_stop_retrying(state)
+        assert should_stop is True
 
-    def test_returns_report_when_no_initial_results(self):
-        from agent.graph import should_retry
+    def test_stops_when_no_initial_results(self):
+        from agent.graph import _should_stop_retrying
 
         state = self._make_state(initial_results=[], final_results=[{"avg_time_ms": 1}])
-        assert should_retry(state) == "report"
+        should_stop, _ = _should_stop_retrying(state)
+        assert should_stop is True
 
-    def test_returns_report_when_no_final_results(self):
-        from agent.graph import should_retry
+    def test_stops_when_no_final_results(self):
+        from agent.graph import _should_stop_retrying
 
         state = self._make_state(initial_results=[{"avg_time_ms": 1}], final_results=[])
-        assert should_retry(state) == "report"
+        should_stop, _ = _should_stop_retrying(state)
+        assert should_stop is True
 
 
 class TestRerunBenchmarksIncrementsRetryCount:
-    """Verify rerun_benchmarks_node bumps retry_count each invocation."""
+    """Verify _rerun_benchmarks bumps retry_count each invocation."""
 
     async def test_retry_count_incremented(self):
-        from agent.graph import rerun_benchmarks_node
+        from agent.graph import _rerun_benchmarks
 
         fake_run_result = {
             "final_results": [{"avg_time_ms": 42}],
@@ -94,11 +100,11 @@ class TestRerunBenchmarksIncrementsRetryCount:
                 "messages": ["prior"],
                 "retry_count": 0,
             }
-            result = await rerun_benchmarks_node(state)
+            result = await _rerun_benchmarks(state)
             assert result["retry_count"] == 1
 
             state2 = {**state, "retry_count": 1}
-            result2 = await rerun_benchmarks_node(state2)
+            result2 = await _rerun_benchmarks(state2)
             assert result2["retry_count"] == 2
 
 
@@ -462,29 +468,8 @@ class TestRunAgentReceivesQueue:
 
 
 # ---------------------------------------------------------------------------
-# Issue 2: cleanup_node must offload shutil.rmtree to a thread.
+# Issue 2: cleanup is now inline in optimization_pipeline (no standalone
+#           cleanup_node).  The pipeline calls:
+#               await asyncio.to_thread(cleanup_repo, repo_path)
+#           cleanup_repo itself is tested in TestGithubServiceUtilities.
 # ---------------------------------------------------------------------------
-
-
-class TestCleanupNodeNonBlocking:
-    async def test_cleanup_uses_to_thread(self):
-        from agent.graph import cleanup_node
-
-        with patch("agent.graph.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-            state = {"repo_path": "/tmp/fakerepo"}
-            await cleanup_node(state)
-
-            mock_to_thread.assert_awaited_once()
-            args = mock_to_thread.call_args[0]
-            assert args[0].__name__ == "cleanup_repo"
-            assert args[1] == "/tmp/fakerepo"
-
-    async def test_cleanup_skips_empty_repo_path(self):
-        from agent.graph import cleanup_node
-
-        with patch("agent.graph.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-            await cleanup_node({"repo_path": ""})
-            mock_to_thread.assert_not_awaited()
-
-            await cleanup_node({})
-            mock_to_thread.assert_not_awaited()
