@@ -243,13 +243,11 @@ async def optimization_pipeline(repo_url: str, github_token: str, optimization_b
     await rt.broadcast("Triaging codebase for hotspots...")
     state.update(await triage_node(state))
 
-    # ── Deep analysis + benchmark generation ─────────────────────────────
-    await rt.broadcast("Analyzing hotspots and generating benchmarks...")
+    # ── Streaming analysis + benchmarks ──────────────────────────────────
+    # Each chunk independently: analyze -> gen benchmarks -> run benchmarks
+    # Results include initial_results from the streaming pipeline
+    await rt.broadcast("Streaming analysis and benchmarks per chunk...")
     state.update(await chunk_analyze_node(state))
-
-    # ── Initial benchmarks ───────────────────────────────────────────────
-    await rt.broadcast("Running initial benchmarks...")
-    state.update(await run_benchmarks_node(state))
 
     # ── Parallel: visualize + optimize ───────────────────────────────────
     await rt.broadcast("Generating visualization and optimizations...")

@@ -5,7 +5,7 @@ import structlog
 
 from agent.schemas import AnalysisResult, BenchmarkScript, Hotspot
 from agent.state import AgentState
-from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
+from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
 log = structlog.get_logger()
 
@@ -129,7 +129,7 @@ async def _generate_single_benchmark(
     hotspot: Hotspot, language: str, ast_map: dict, index: int
 ) -> BenchmarkScript | None:
     """Generate a benchmark script for a single hotspot."""
-    agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_PRO)
+    agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_FLASH)
 
     # Filter AST to relevant file
     filtered_ast = {

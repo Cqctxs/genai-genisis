@@ -6,7 +6,7 @@ import structlog
 
 from agent.schemas import BenchmarkResult, BenchmarkScript
 from agent.state import AgentState
-from services.modal_service import run_benchmark
+from services.modal_service import run_benchmark, run_benchmarks_batch
 from services.github_service import read_file
 
 log = structlog.get_logger()
@@ -51,7 +51,7 @@ async def _regenerate_benchmark(
 ) -> BenchmarkScript | None:
     """Ask Gemini to fix a benchmark script that failed at runtime."""
     from agent.nodes.benchmarker import BENCHMARK_PROMPT
-    from services.gemini_service import GEMINI_PRO, get_agent, run_agent_logged
+    from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
     filtered_ast = {
         "functions": [f for f in ast_map.get("functions", []) if f.get("file") == bench.file],
@@ -59,10 +59,25 @@ async def _regenerate_benchmark(
         "imports": [i for i in ast_map.get("imports", []) if i.get("file") == bench.file],
     }
 
+    # Detect timeout errors and add specific guidance
+    is_timeout = "timeout" in error_msg.lower() or "timed out" in error_msg.lower()
+    timeout_guidance = ""
+    if is_timeout:
+        timeout_guidance = """
+### CRITICAL: Execution Timeout Detected
+The script took too long to run. The function has high algorithmic complexity.
+**You MUST reduce the input size or number of iterations significantly:**
+- Start with N=1000 or fewer (not 10,000+)
+- Use 5-10 iterations only (not 50+)
+- Prioritize completing in under 15 seconds total
+- Smaller inputs reveal algorithmic differences better than slow large inputs
+"""
+
     fix_prompt = f"""## Previous Benchmark Script FAILED at Runtime
 
 The following benchmark script for `{bench.target_function}` crashed when executed
 in the sandbox. Regenerate a FIXED version that avoids the error.
+{timeout_guidance}
 
 ### Error
 ```
@@ -93,7 +108,7 @@ IMPORTANT:
 - Do NOT reuse the broken mock data from the previous attempt."""
 
     try:
-        agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_PRO)
+        agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_FLASH)
         result = await run_agent_logged(agent, fix_prompt, node_name=f"fix_bench_{bench.target_function}")
         fixed: BenchmarkScript = result.output  # type: ignore[assignment]
         log.info(
@@ -197,6 +212,7 @@ async def _execute_single_benchmark(
     index: int,
     repo_files: dict[str, str],
     ast_map: dict | None = None,
+    allow_regeneration: bool = True,
 ) -> dict:
     """Execute a single benchmark, retrying with Gemini regeneration on failure."""
     current_bench = bench
@@ -244,9 +260,11 @@ async def _execute_single_benchmark(
             return result
 
         remaining = MAX_BENCH_RETRIES - attempt
-        if remaining <= 0 or ast_map is None:
+        if remaining <= 0 or ast_map is None or not allow_regeneration:
             if remaining <= 0:
                 log.warning("benchmark_max_retries_exhausted", target=bench.target_function)
+            elif not allow_regeneration:
+                log.warning("benchmark_regeneration_disabled", target=bench.target_function)
             return result
 
         log.info(
@@ -343,11 +361,29 @@ async def run_benchmarks_node(state: AgentState) -> dict:
 
     ast_map = state.get("ast_map", {})
 
-    tasks = [
-        _execute_single_benchmark(bench, i, repo_files, ast_map=ast_map)
+    batch_payload = [
+        {"id": i, "code": bench.script_content, "language": bench.language}
         for i, bench in enumerate(benchmarks)
     ]
-    results = list(await asyncio.gather(*tasks))
+    batch_outputs = await run_benchmarks_batch(batch_payload, repo_files)
+
+    results: list[dict] = []
+    failed: list[tuple[int, BenchmarkScript, str, dict]] = []
+    for i, (bench, output) in enumerate(zip(benchmarks, batch_outputs)):
+        result, error_desc = _parse_benchmark_output(bench, output)
+        results.append(result)
+        if _is_failed_result(result) and ast_map:
+            failed.append((i, bench, error_desc or "Unknown failure", output))
+
+    if failed:
+        log.info("batch_retrying_failures", count=len(failed))
+        retry_tasks = [
+            _execute_single_benchmark(bench, idx, repo_files, ast_map=ast_map)
+            for idx, bench, _, _ in failed
+        ]
+        retry_results = await asyncio.gather(*retry_tasks)
+        for (idx, _, _, _), retry_result in zip(failed, retry_results):
+            results[idx] = retry_result
 
     total_time = sum(r["avg_time_ms"] for r in results)
     log.info(

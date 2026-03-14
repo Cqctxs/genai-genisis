@@ -75,8 +75,11 @@ export interface BenchyScore {
   overall_before: number;
   overall_after: number;
   time_score: number;
+  time_score_before: number;
   memory_score: number;
+  memory_score_before: number;
   complexity_score: number;
+  complexity_score_before: number;
   radar_data: RadarAxis[];
 }
 
@@ -98,6 +101,19 @@ export interface ComparisonReport {
   sandbox_specs: string;
 }
 
+export interface BenchmarkDetail {
+  function_name: string;
+  file: string;
+  language: string;
+  script_content: string;
+  before_time_ms: number;
+  before_memory_mb: number;
+  after_time_ms: number;
+  after_memory_mb: number;
+  speedup_factor: number;
+  summary: string;
+}
+
 export interface JobResult {
   graph_data: GraphData;
   comparison: ComparisonReport;
@@ -108,6 +124,7 @@ export interface JobResult {
   pr_url: string;
   pr_status?: string;
   pr_error?: string | null;
+  benchmark_details?: BenchmarkDetail[];
 }
 
 export async function startAnalysis(

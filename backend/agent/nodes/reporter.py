@@ -4,7 +4,7 @@ import json
 import structlog
 from pydantic import BaseModel
 
-from agent.schemas import CodeMarkScore, ComparisonReport, FunctionComparison
+from agent.schemas import CodeMarkScore, ComparisonReport, FunctionComparison, BenchmarkDetail
 from agent.state import AgentState
 from services.modal_service import get_sandbox_specs
 from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
@@ -18,6 +18,10 @@ affected performance, and whether any time-space tradeoffs were made.
 
 Do NOT invent numbers — only reference the data provided. Be direct and factual."""
 
+BENCHMARK_DETAIL_PROMPT = """You are a concise technical writer. Summarize what this benchmark tests in 1-2 sentences.
+Focus on: what the function does, what the test measures, what changed between before and after.
+Be specific and technical but concise."""
+
 SUMMARY_TIMEOUT_S = 30
 
 
@@ -30,6 +34,7 @@ async def report_node(state: AgentState) -> dict:
     initial_results = state.get("initial_results", [])
     final_results = state.get("final_results", [])
     hotspots = state.get("analysis", {}).get("hotspots", [])
+    benchmark_code = state.get("benchmark_code", [])
 
     log.info(
         "report_start",
@@ -46,6 +51,11 @@ async def report_node(state: AgentState) -> dict:
 
     sandbox_specs = await get_sandbox_specs()
     summary = await _generate_summary(function_comparisons, hotspots, score)
+
+    # Generate detailed benchmark information
+    benchmark_details = await _generate_benchmark_details(
+        benchmark_code, initial_results, final_results, function_comparisons
+    )
 
     report = ComparisonReport(
         functions=function_comparisons,
@@ -77,6 +87,7 @@ async def report_node(state: AgentState) -> dict:
     return {
         **state,
         "comparison": report.model_dump(),
+        "benchmark_details": [bd.model_dump() for bd in benchmark_details],
         "messages": state.get("messages", []) + [
             f"CodeMark Score: {report.benchy_score.overall_before:.0f} -> {report.benchy_score.overall_after:.0f}"
         ],
@@ -146,3 +157,72 @@ def _fallback_summary(
         parts.append(f"{len(tradeoffs)} used a time-space tradeoff (faster execution, higher memory).")
     parts.append(f"Overall CodeMark score: {score.overall_before:.0f} → {score.overall_after:.0f}.")
     return " ".join(parts)
+
+
+async def _generate_benchmark_details(
+    benchmark_code: list[dict],
+    initial_results: list[dict],
+    final_results: list[dict],
+    comparisons: list[FunctionComparison],
+) -> list[BenchmarkDetail]:
+    """Generate detailed benchmark information including summaries."""
+    if not benchmark_code:
+        return []
+
+    # Map results by function name for quick lookup
+    initial_by_fn = {r.get("function_name", ""): r for r in initial_results}
+    final_by_fn = {r.get("function_name", ""): r for r in final_results}
+
+    details = []
+    agent = get_agent(SummaryText, BENCHMARK_DETAIL_PROMPT, GEMINI_FLASH)
+
+    for bench in benchmark_code[:10]:  # Limit to first 10 benchmarks for performance
+        fn_name = bench.get("target_function", "")
+        initial = initial_by_fn.get(fn_name, {})
+        final = final_by_fn.get(fn_name, {})
+
+        # Find comparison for this function
+        comparison = next((c for c in comparisons if c.function_name == fn_name), None)
+        if not comparison:
+            continue
+
+        # Generate benchmark summary
+        summary = ""
+        try:
+            summary_prompt = f"""This benchmark tests the function `{fn_name}` in file `{bench.get('file', '')}`.
+
+The benchmark script:
+```{bench.get('language', 'python')}
+{bench.get('script_content', '')[:1000]}
+```
+
+Before optimization: {initial.get("avg_time_ms", 0):.2f}ms, {initial.get("memory_peak_mb", 0):.1f}MB
+After optimization: {final.get("avg_time_ms", 0):.2f}ms, {final.get("memory_peak_mb", 0):.1f}MB
+
+Summarize what this benchmark tests."""
+
+            result = await asyncio.wait_for(
+                run_agent_logged(agent, summary_prompt, node_name=f"benchmark_detail_{fn_name}"),
+                timeout=10,
+            )
+            summary_output: SummaryText = result.output  # type: ignore[assignment]
+            summary = summary_output.summary
+        except Exception as e:
+            log.warning("benchmark_detail_summary_failed", function=fn_name, error=str(e))
+            summary = f"Benchmark for {fn_name}"
+
+        detail = BenchmarkDetail(
+            function_name=fn_name,
+            file=bench.get("file", ""),
+            language=bench.get("language", ""),
+            script_content=bench.get("script_content", ""),
+            before_time_ms=float(initial.get("avg_time_ms", 0)),
+            before_memory_mb=float(initial.get("memory_peak_mb", 0)),
+            after_time_ms=float(final.get("avg_time_ms", 0)),
+            after_memory_mb=float(final.get("memory_peak_mb", 0)),
+            speedup_factor=comparison.speedup_factor,
+            summary=summary,
+        )
+        details.append(detail)
+
+    return details

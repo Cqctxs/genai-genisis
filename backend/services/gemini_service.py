@@ -13,6 +13,7 @@ log = structlog.get_logger()
 
 GEMINI_PRO = "google-gla:gemini-3.1-pro-preview"
 GEMINI_FLASH = "google-gla:gemini-3-flash-preview"
+GEMINI_THINKING = "google-gla:gemini-2.5-flash-preview"
 
 
 def _output_type_label(output_type: type) -> str:
@@ -20,14 +21,18 @@ def _output_type_label(output_type: type) -> str:
     return name if name else str(output_type)
 
 PRO_SETTINGS = GoogleModelSettings(
-    google_thinking_config={"thinking_level": ThinkingLevel.LOW},
+    google_thinking_config={"thinking_level": ThinkingLevel.MEDIUM},
 )
 
 PRO_SETTINGS_HIGH = GoogleModelSettings(
     google_thinking_config={"thinking_level": ThinkingLevel.HIGH},
 )
 
-def get_agent(output_type: type, system_prompt: str, model: str = GEMINI_PRO) -> Agent:
+THINKING_SETTINGS = GoogleModelSettings(
+    google_thinking_config={"thinking_level": ThinkingLevel.HIGH},
+)
+
+def get_agent(output_type: type, system_prompt: str, model: str = GEMINI_FLASH) -> Agent:
     """Create a PydanticAI agent configured for the given output schema."""
     agent = Agent(
         model,
@@ -73,11 +78,7 @@ async def run_agent_logged(
     model_str = getattr(agent, '_model_str', 'unknown')
     output_type = getattr(agent, "_codemark_output_type", "unknown")
 
-    # Default to PRO_SETTINGS for Pro model calls
     settings = model_settings
-    if settings is None and model_str == GEMINI_PRO:
-        settings = PRO_SETTINGS
-
     thinking_config = getattr(settings, "google_thinking_config", None) if settings else None
     thinking_level = thinking_config.get("thinking_level") if thinking_config else None
 
