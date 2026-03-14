@@ -50,12 +50,7 @@ For every node, populate:
   pointing BACKWARDS from a downstream node to the loop's entry point. Label it with
   the loop description (e.g. "for each item", "retry until success", "recurse on children")
 
-## Layout Rules
-
-- Arrange nodes in a readable top-to-bottom flow
-- Space nodes ~200px apart vertically and ~300px apart horizontally
-- Place condition nodes so their branches fan out left/right before merging back
-- Loop-back edges will be rendered as curved backward arrows by the frontend
+Do NOT include any position data — the frontend handles layout automatically.
 
 The output must be valid GraphData with nodes and edges arrays."""
 

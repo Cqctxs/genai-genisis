@@ -51,8 +51,6 @@ export interface GraphNode {
   avg_time_ms: number | null;
   memory_mb: number | null;
   severity: string | null;
-  position_x: number;
-  position_y: number;
 }
 
 export interface GraphEdge {
