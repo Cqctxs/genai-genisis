@@ -61,7 +61,10 @@ def _should_stop_retrying(state: AgentState) -> tuple[bool, str]:
         return False, f"correctness failures in {failed_fns}, retrying optimization"
 
     if correctness_failures and retry_count >= MAX_OPTIMIZATION_RETRIES:
-        return True, "correctness failures remain after max retries, reverting broken files"
+        return (
+            True,
+            "correctness failures remain after max retries, reverting broken files",
+        )
 
     if retry_count >= MAX_OPTIMIZATION_RETRIES:
         return True, f"max retries reached ({retry_count})"
@@ -70,15 +73,27 @@ def _should_stop_retrying(state: AgentState) -> tuple[bool, str]:
         return True, f"missing results (initial={len(initial)}, final={len(final)})"
 
     if initial_total == 0 and final_total == 0:
-        return True, "all benchmarks returned 0ms (likely sandbox failures), skipping retry"
+        return (
+            True,
+            "all benchmarks returned 0ms (likely sandbox failures), skipping retry",
+        )
 
     if initial_total > 0 and final_total < initial_total:
-        return True, f"improvement detected ({initial_total:.1f}ms -> {final_total:.1f}ms)"
+        return (
+            True,
+            f"improvement detected ({initial_total:.1f}ms -> {final_total:.1f}ms)",
+        )
 
     if initial_total > 0 and abs(final_total - initial_total) / initial_total < 0.05:
-        return True, f"marginal difference ({initial_total:.1f}ms -> {final_total:.1f}ms, <5%), not worth retrying"
+        return (
+            True,
+            f"marginal difference ({initial_total:.1f}ms -> {final_total:.1f}ms, <5%), not worth retrying",
+        )
 
-    return False, f"no improvement ({initial_total:.1f}ms -> {final_total:.1f}ms), retrying"
+    return (
+        False,
+        f"no improvement ({initial_total:.1f}ms -> {final_total:.1f}ms), retrying",
+    )
 
 
 async def _generate_initial_benchmark_details(state: AgentState) -> dict:
@@ -173,9 +188,16 @@ async def _create_pr(state: AgentState) -> dict:
     except Exception as e:
         error_str = str(e).lower()
         permission_keywords = (
-            "permission", "403", "404", "not found", "push access", "write permission",
+            "permission",
+            "403",
+            "404",
+            "not found",
+            "push access",
+            "write permission",
         )
-        if isinstance(e, PermissionError) or any(kw in error_str for kw in permission_keywords):
+        if isinstance(e, PermissionError) or any(
+            kw in error_str for kw in permission_keywords
+        ):
             pr_status = "permission_denied"
             pr_error = str(e)
         else:
@@ -236,7 +258,9 @@ def _extract_result(state: AgentState) -> dict:
 
 
 @rt.function_node
-async def optimization_pipeline(repo_url: str, github_token: str, optimization_bias: str = "balanced") -> dict:
+async def optimization_pipeline(
+    repo_url: str, github_token: str, optimization_bias: str = "balanced"
+) -> dict:
     """Main orchestration flow — replaces the LangGraph StateGraph.
 
     Each stage calls the existing node functions directly (their signatures
@@ -348,11 +372,14 @@ async def run_optimization_pipeline(
 
     broadcast_cb = None  # type: ignore[assignment]
     if queue:
-        async def broadcast_cb(msg: str) -> None:  # type: ignore[assignment]
-            await queue.put({
-                "event": "progress",
-                "data": json.dumps({"node": "pipeline", "message": msg}),
-            })
+
+        async def broadcast_cb(msg: str) -> None:
+            await queue.put(
+                {
+                    "event": "progress",
+                    "data": json.dumps({"node": "pipeline", "message": msg}),
+                }
+            )
 
     flow = rt.Flow(
         "CodeMark Optimization",
@@ -366,5 +393,123 @@ async def run_optimization_pipeline(
 
     total_elapsed = time.monotonic() - pipeline_start
     log.info("pipeline_complete", total_time_s=round(total_elapsed, 1))
+
+    return result
+
+
+async def _run_local_pipeline(
+    files: dict[str, str],
+    language: str,
+    optimization_bias: str = "balanced",
+    broadcast: object = None,
+) -> dict:
+    """Pipeline variant for local files — no git clone, no PR creation."""
+    import shutil
+    import tempfile
+
+    async def _broadcast(msg: str) -> None:
+        if broadcast and callable(broadcast):
+            await broadcast(msg)
+
+    state: AgentState = {
+        "repo_url": "",
+        "github_token": "",
+        "optimization_bias": optimization_bias,
+        "messages": [],
+    }
+
+    # Write files to a temp directory so existing nodes work unchanged
+    temp_dir = tempfile.mkdtemp(prefix="codemark_local_")
+    for rel_path, content in files.items():
+        full_path = os.path.join(temp_dir, rel_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    state["repo_path"] = temp_dir
+    state["messages"].append("Local files loaded")
+
+    # ── Parse AST ────────────────────────────────────────────────────────
+    await _broadcast("Parsing codebase AST...")
+    state.update(await parse_ast_node(state))
+
+    # ── Triage ───────────────────────────────────────────────────────────
+    await _broadcast("Triaging codebase for hotspots...")
+    state.update(await triage_node(state))
+
+    # ── Streaming analysis + benchmarks ──────────────────────────────────
+    await _broadcast("Streaming analysis and benchmarks per chunk...")
+    state.update(await chunk_analyze_node(state))
+
+    # ── Optimize ─────────────────────────────────────────────────────────
+    await _broadcast("Generating optimizations...")
+    opt_result = await optimize_node(state)
+    state["optimized_files"] = opt_result.get("optimized_files", {})
+    state["messages"] = opt_result.get("messages", state["messages"])
+
+    # ── Optimization retry loop ──────────────────────────────────────────
+    for attempt in range(1, MAX_OPTIMIZATION_RETRIES + 2):
+        await _broadcast(f"Re-running benchmarks (attempt {attempt})...")
+        rerun_update = await _rerun_benchmarks(state)
+        state.update(rerun_update)
+
+        should_stop, reason = _should_stop_retrying(state)
+        log.info(
+            "should_retry_decision",
+            decision="report" if should_stop else "optimize",
+            reason=reason,
+            retry_count=state.get("retry_count", 0),
+        )
+
+        if should_stop:
+            if state.get("correctness_failures"):
+                state["optimized_files"] = _revert_broken_files(state)
+            break
+
+        await _broadcast("Re-optimizing based on benchmark feedback...")
+        state.update(await optimize_node(state))
+
+    # ── Report ───────────────────────────────────────────────────────────
+    await _broadcast("Generating CodeMark report...")
+    state.update(await report_node(state))
+
+    # ── Cleanup ──────────────────────────────────────────────────────────
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+    return _extract_result(state)
+
+
+async def run_local_optimization_pipeline(
+    files: dict[str, str],
+    language: str,
+    queue: asyncio.Queue | None = None,
+    optimization_bias: str = "balanced",
+) -> dict:
+    """Public entry point for local file analysis."""
+    log.info(
+        "local_pipeline_start",
+        num_files=len(files),
+        language=language,
+        optimization_bias=optimization_bias,
+    )
+    pipeline_start = time.monotonic()
+
+    broadcast_cb = None
+    if queue:
+
+        async def broadcast_cb(msg: str) -> None:
+            await queue.put(
+                {
+                    "event": "progress",
+                    "data": json.dumps({"node": "pipeline", "message": msg}),
+                }
+            )
+
+    result = await _run_local_pipeline(
+        files, language, optimization_bias, broadcast=broadcast_cb
+    )
+
+    total_elapsed = time.monotonic() - pipeline_start
+    log.info("local_pipeline_complete", total_time_s=round(total_elapsed, 1))
 
     return result

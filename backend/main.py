@@ -41,7 +41,7 @@ app.state.limiter = limiter
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "vscode-webview://*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,6 +51,12 @@ app.add_middleware(
 class AnalyzeRequest(BaseModel):
     repo_url: HttpUrl
     github_token: str
+    optimization_bias: str = "balanced"
+
+
+class AnalyzeLocalRequest(BaseModel):
+    files: dict[str, str]
+    language: str = "python"
     optimization_bias: str = "balanced"
 
 
@@ -69,7 +75,9 @@ async def list_repos(github_token: str):
         raise HTTPException(status_code=401, detail=str(e))
     except Exception as e:
         log.error("list_repos_failed", error=str(e))
-        raise HTTPException(status_code=502, detail="Failed to fetch repositories from GitHub")
+        raise HTTPException(
+            status_code=502, detail="Failed to fetch repositories from GitHub"
+        )
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
@@ -81,7 +89,9 @@ async def analyze_repo(request: Request, body: AnalyzeRequest):
     jobs[job_id] = {"status": "pending", "result": None}
 
     asyncio.create_task(
-        _run_agent(job_id, str(body.repo_url), body.github_token, queue, body.optimization_bias)
+        _run_agent(
+            job_id, str(body.repo_url), body.github_token, queue, body.optimization_bias
+        )
     )
 
     log.info("job_created", job_id=job_id, repo_url=str(body.repo_url))
@@ -89,13 +99,19 @@ async def analyze_repo(request: Request, body: AnalyzeRequest):
 
 
 async def _run_agent(
-    job_id: str, repo_url: str, github_token: str, queue: asyncio.Queue, optimization_bias: str = "balanced"
+    job_id: str,
+    repo_url: str,
+    github_token: str,
+    queue: asyncio.Queue,
+    optimization_bias: str = "balanced",
 ):
     from agent.graph import run_optimization_pipeline
 
     try:
         jobs[job_id]["status"] = "running"
-        result = await run_optimization_pipeline(repo_url, github_token, queue, optimization_bias)
+        result = await run_optimization_pipeline(
+            repo_url, github_token, queue, optimization_bias
+        )
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["result"] = result
         await queue.put({"event": "complete", "data": result})
@@ -120,7 +136,11 @@ async def stream_job(job_id: str):
                     data = message.get("data", "")
                     yield {
                         "event": message.get("event", "update"),
-                        "data": json.dumps(data) if isinstance(data, (dict, list)) else str(data),
+                        "data": (
+                            json.dumps(data)
+                            if isinstance(data, (dict, list))
+                            else str(data)
+                        ),
                     }
                     if message.get("event") in ("complete", "error"):
                         break
@@ -151,6 +171,48 @@ async def get_results(job_id: str):
     result["pr_url"] = result.get("pr_url", "")
 
     return result
+
+
+@app.post("/api/analyze-local", response_model=AnalyzeResponse)
+@limiter.limit("5/minute")
+async def analyze_local(request: Request, body: AnalyzeLocalRequest):
+    job_id = str(uuid.uuid4())
+    queue: asyncio.Queue = asyncio.Queue()
+    job_queues[job_id] = queue
+    jobs[job_id] = {"status": "pending", "result": None}
+
+    asyncio.create_task(
+        _run_local_agent(
+            job_id, body.files, body.language, queue, body.optimization_bias
+        )
+    )
+
+    log.info("local_job_created", job_id=job_id, num_files=len(body.files))
+    return AnalyzeResponse(job_id=job_id)
+
+
+async def _run_local_agent(
+    job_id: str,
+    files: dict[str, str],
+    language: str,
+    queue: asyncio.Queue,
+    optimization_bias: str = "balanced",
+):
+    from agent.graph import run_local_optimization_pipeline
+
+    try:
+        jobs[job_id]["status"] = "running"
+        result = await run_local_optimization_pipeline(
+            files, language, queue, optimization_bias
+        )
+        jobs[job_id]["status"] = "completed"
+        jobs[job_id]["result"] = result
+        await queue.put({"event": "complete", "data": result})
+    except Exception as e:
+        log.error("local_agent_failed", job_id=job_id, error=str(e))
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = str(e)
+        await queue.put({"event": "error", "data": {"message": str(e)}})
 
 
 @app.get("/api/health")
