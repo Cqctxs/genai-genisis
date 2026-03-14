@@ -8,7 +8,7 @@ A production-ready developer tool that analyzes, benchmarks, and optimizes your 
 - **Backend**: Python FastAPI, LangGraph agent orchestration, PydanticAI structured output
 - **AI**: Google Gemini 2.5 Pro for code analysis and optimization
 - **Code Parsing**: Tree-sitter for deterministic AST extraction
-- **Execution**: E2B cloud sandboxes for safe benchmark execution
+- **Execution**: Modal cloud containers for safe, isolated benchmark execution
 - **Auth**: GitHub OAuth via NextAuth.js
 
 ## Quick Start
@@ -19,7 +19,7 @@ A production-ready developer tool that analyzes, benchmarks, and optimizes your 
 - Python 3.12+
 - GitHub OAuth app ([create one](https://github.com/settings/developers))
 - Google AI API key ([get one](https://aistudio.google.com/apikey))
-- E2B API key ([get one](https://e2b.dev))
+- Modal account ([sign up](https://modal.com) and run `modal token new`)
 
 ### Setup
 
@@ -66,7 +66,7 @@ docker-compose up
 
 1. **Connect** - Sign in with GitHub and paste a repository URL
 2. **Analyze** - Tree-sitter parses the AST, Gemini identifies bottlenecks
-3. **Benchmark** - Profiling scripts run in E2B sandboxes (pyinstrument / clinic.js)
+3. **Benchmark** - Profiling scripts run in Modal containers (pyinstrument / clinic.js)
 4. **Visualize** - React Flow graph shows call relationships with performance heatmap
 5. **Optimize** - Gemini rewrites bottleneck code with targeted improvements
 6. **Score** - Before/after benchmarks produce a composite CodeMark score
