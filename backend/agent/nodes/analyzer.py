@@ -5,7 +5,7 @@ import structlog
 
 from agent.schemas import AnalysisResult, BenchmarkBatch, BenchmarkScript, Hotspot, TriageChunk, TriageResult
 from agent.state import AgentState
-from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
+from services.gemini_service import GEMINI_FLASH, PRO_SETTINGS_MEDIUM, get_agent, run_agent_logged
 from services.log_utils import log_block
 from services.github_service import get_file_tree, read_file
 from services.parser_service import parse_repo
@@ -243,7 +243,7 @@ async def _generate_benchmark_batch(
     )
 
     try:
-        result = await run_agent_logged(agent, prompt, node_name=f"gen_bench_batch_{batch_index}")
+        result = await run_agent_logged(agent, prompt, node_name=f"gen_bench_batch_{batch_index}", model_settings=PRO_SETTINGS_MEDIUM)
         batch: BenchmarkBatch = result.output  # type: ignore[assignment]
         log.info(
             "benchmark_batch_generated",

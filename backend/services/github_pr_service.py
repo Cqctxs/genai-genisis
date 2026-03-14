@@ -241,6 +241,8 @@ async def _resolve_token_and_strategy(
             )
             if invited:
                 log.info("bot_granted_access_via_invite", owner=owner, repo=repo)
+                # Wait a moment for GitHub to sync permissions
+                await asyncio.sleep(2)
                 return CODEMARK_BOT_TOKEN, True, False
 
             log.warning("bot_token_no_repo_access", owner=owner, repo=repo, status=resp.status_code)
@@ -260,6 +262,8 @@ async def _resolve_token_and_strategy(
         )
         if invited:
             log.info("bot_upgraded_to_push_via_invite", owner=owner, repo=repo)
+            # Wait a moment for GitHub to sync permissions
+            await asyncio.sleep(2)
             return CODEMARK_BOT_TOKEN, True, False
 
         # Invitation failed — fork for public repos, user token for private
@@ -290,6 +294,8 @@ async def _push_changes_to_repo(
         headers=headers,
         json={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
     )
+    if create_ref_resp.status_code != 201:
+        log.error("pr_branch_create_failed", status=create_ref_resp.status_code, text=create_ref_resp.text)
     create_ref_resp.raise_for_status()
     log.info("pr_branch_created", repo=target_repo, branch=branch_name)
 
@@ -300,6 +306,8 @@ async def _push_changes_to_repo(
             headers=headers,
             json={"content": content, "encoding": "utf-8"},
         )
+        if blob_resp.status_code != 201:
+            log.error("pr_blob_create_failed", path=file_path, status=blob_resp.status_code, text=blob_resp.text)
         blob_resp.raise_for_status()
         blob_shas[file_path] = blob_resp.json()["sha"]
 
@@ -435,6 +443,7 @@ async def create_optimization_pr(
             push_repo = f"{owner}/{repo}"
             pr_head = branch_name
 
+        log.info("pr_pushing_changes", push_repo=push_repo, branch=branch_name)
         await _push_changes_to_repo(
             client, headers, push_repo, branch_name, base_sha, optimized_files,
         )

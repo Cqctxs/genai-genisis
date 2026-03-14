@@ -84,6 +84,7 @@ class BenchmarkResult(BaseModel):
     memory_peak_mb: float
     iterations: int
     raw_output: str = ""
+    validation_fingerprint: str | None = None
 
 
 class GraphNode(BaseModel):

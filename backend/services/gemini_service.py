@@ -23,6 +23,10 @@ PRO_SETTINGS = GoogleModelSettings(
     google_thinking_config={"thinking_level": ThinkingLevel.LOW},
 )
 
+PRO_SETTINGS_MEDIUM = GoogleModelSettings(
+    google_thinking_config={"thinking_level": ThinkingLevel.MEDIUM},
+)
+
 def get_agent(output_type: type, system_prompt: str, model: str = GEMINI_PRO) -> Agent:
     """Create a PydanticAI agent configured for the given output schema."""
     agent = Agent(
