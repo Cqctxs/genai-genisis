@@ -4,17 +4,17 @@ import structlog
 
 from agent.schemas import BenchmarkResult, BenchmarkScript
 from agent.state import AgentState
-from services.e2b_service import run_benchmark
+from services.modal_service import run_benchmark
 from services.github_service import read_file
 
 log = structlog.get_logger()
 
 
-async def run_benchmarks_node(state: AgentState) -> AgentState:
-    """Execute benchmark scripts in E2B sandboxes and collect results."""
-    benchmarks = [BenchmarkScript(**b) for b in state["benchmark_code"]]
-    repo_path = state["repo_path"]
-    file_tree = state["file_tree"]
+async def run_benchmarks_node(state: AgentState) -> dict:
+    """Execute benchmark scripts in Modal sandboxes and collect results."""
+    benchmarks = [BenchmarkScript(**b) for b in state.get("benchmark_code", [])]
+    repo_path = state.get("repo_path", "")
+    file_tree = state.get("file_tree", [])
     results_key = "initial_results" if "initial_results" not in state else "final_results"
 
     repo_files = {}

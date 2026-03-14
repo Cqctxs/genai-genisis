@@ -4,7 +4,7 @@ import structlog
 
 from agent.schemas import BenchmarkResult, CodeMarkScore, ComparisonReport
 from agent.state import AgentState
-from services.e2b_service import get_sandbox_specs
+from services.modal_service import get_sandbox_specs
 from services.gemini_service import GEMINI_FLASH, get_agent
 
 log = structlog.get_logger()
