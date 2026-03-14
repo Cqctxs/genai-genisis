@@ -109,10 +109,27 @@ function getLayoutedElements(
 
   Dagre.layout(g);
 
-  const centerY = new Map<string, number>();
-  for (const n of graphData.nodes) {
-    centerY.set(n.id, g.node(n.id).y);
-  }
+  // 1. Pre-calculate the bounding boxes for all nodes to detect local collisions
+  let graphTopY = Infinity;
+  let graphBottomY = -Infinity;
+  const nodeBoxes = graphData.nodes.map((n) => {
+    const pos = g.node(n.id);
+    const h = estimateNodeHeight(n);
+    const top = pos.y - h / 2;
+    const bottom = pos.y + h / 2;
+    
+    graphTopY = Math.min(graphTopY, top);
+    graphBottomY = Math.max(graphBottomY, bottom);
+
+    return {
+      id: n.id,
+      left: pos.x - NODE_WIDTH / 2,
+      right: pos.x + NODE_WIDTH / 2,
+      top,
+      bottom,
+      centerY: pos.y,
+    };
+  });
 
   const nodes: Node[] = graphData.nodes.map((n) => {
     const pos = g.node(n.id);
@@ -140,9 +157,57 @@ function getLayoutedElements(
     let sourceHandle: string | undefined;
     let targetHandle: string | undefined;
 
-    if (isBranch) {
-      const srcY = centerY.get(e.source) ?? 0;
-      const tgtY = centerY.get(e.target) ?? 0;
+    if (isLoopBack) {
+      const srcBox = nodeBoxes.find((b) => b.id === e.source);
+      const tgtBox = nodeBoxes.find((b) => b.id === e.target);
+
+      if (srcBox && tgtBox) {
+        // Find the horizontal span that this loopback edge covers
+        const spanLeft = Math.min(srcBox.left, tgtBox.left);
+        const spanRight = Math.max(srcBox.right, tgtBox.right);
+        const avgY = (srcBox.centerY + tgtBox.centerY) / 2;
+
+        let closestTopDist = Infinity;
+        let closestBottomDist = Infinity;
+
+        // 2. Check all other nodes to see if they are acting as obstacles
+        for (const box of nodeBoxes) {
+          if (box.id === e.source || box.id === e.target) continue;
+
+          // If the node sits horizontally between our source and target
+          if (box.left <= spanRight && box.right >= spanLeft) {
+            if (box.centerY < avgY) {
+              // Obstacle is above our nodes
+              const dist = avgY - box.bottom;
+              if (dist < closestTopDist) closestTopDist = dist;
+            } else {
+              // Obstacle is below our nodes
+              const dist = box.top - avgY;
+              if (dist < closestBottomDist) closestBottomDist = dist;
+            }
+          }
+        }
+
+        // 3. Choose the side with the most local clearance
+        if (closestTopDist === Infinity && closestBottomDist === Infinity) {
+          // Fallback: If no obstacles exist locally, use global graph bounds
+          const topClearance = avgY - graphTopY;
+          const bottomClearance = graphBottomY - avgY;
+          const side = topClearance >= bottomClearance ? "loop_top" : "loop_bottom";
+          sourceHandle = side;
+          targetHandle = side;
+        } else {
+          // Primary heuristic: Go the direction with the furthest obstacle
+          const side = closestTopDist >= closestBottomDist ? "loop_top" : "loop_bottom";
+          sourceHandle = side;
+          targetHandle = side;
+        }
+      }
+    } else if (isBranch) {
+      const srcBox = nodeBoxes.find((b) => b.id === e.source);
+      const tgtBox = nodeBoxes.find((b) => b.id === e.target);
+      const srcY = srcBox?.centerY ?? 0;
+      const tgtY = tgtBox?.centerY ?? 0;
       sourceHandle = tgtY <= srcY ? "branch_top" : "branch_bottom";
     }
 
@@ -163,15 +228,8 @@ function getLayoutedElements(
         strokeDasharray: isLoopBack ? "6 3" : undefined,
       },
       data: { sourceColor, targetColor },
-      labelStyle: {
-        fill: targetColor,
-        fontSize: 10,
-        fontWeight: 500,
-      },
-      labelBgStyle: {
-        fill: "var(--color-dark)",
-        fillOpacity: 0.85,
-      },
+      labelStyle: { fill: targetColor, fontSize: 10, fontWeight: 500 },
+      labelBgStyle: { fill: "var(--color-dark)", fillOpacity: 0.85 },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
       markerEnd: {
@@ -235,6 +293,7 @@ function NodeShell({
   return (
     <>
       <Handle type="target" position={Position.Left} className="!opacity-0 !w-2 !h-2 !border-0" />
+      
       <div
         className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px]"
         style={{
@@ -269,6 +328,10 @@ function NodeShell({
         </div>
       </div>
       <Handle type="source" position={Position.Right} className="!opacity-0 !w-2 !h-2 !border-0" />
+      <Handle type="source" id="loop_top" position={Position.Top} className="!opacity-0 !w-2 !h-2 !border-0" />
+      <Handle type="target" id="loop_top" position={Position.Top} className="!opacity-0 !w-2 !h-2 !border-0" />
+      <Handle type="source" id="loop_bottom" position={Position.Bottom} className="!opacity-0 !w-2 !h-2 !border-0" />
+      <Handle type="target" id="loop_bottom" position={Position.Bottom} className="!opacity-0 !w-2 !h-2 !border-0" />
     </>
   );
 }
@@ -354,6 +417,7 @@ const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
   const node = (data as unknown as SemanticNodeData).graphNode;
   const config = NODE_TYPE_CONFIG.condition;
   const severityColor = SEVERITY_COLORS[node.severity || "low"] || DEFAULT_EDGE_COLOR;
+  
   return (
     <>
       <Handle type="target" position={Position.Left} className="!opacity-0 !w-2 !h-2 !border-0" />
@@ -391,25 +455,44 @@ const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
           <NodeMetrics node={node} />
         </div>
       </div>
-      {/* Branch handles: position-based — layout picks top/bottom dynamically */}
+
+      {/* Default forward handle */}
       <Handle
         type="source"
         position={Position.Right}
         id="default"
         className="!opacity-0 !w-2 !h-2 !border-0"
       />
+      
+      {/* 
+        NEW: Changed Position.Top to Position.Right, added top: 30% 
+        This is for the branch going UP, so it exits near the top-right corner.
+      */}
       <Handle
         type="source"
-        position={Position.Top}
+        position={Position.Right}
         id="branch_top"
+        style={{ top: '30%' }}
         className="!opacity-0 !w-2 !h-2 !border-0"
       />
+      
+      {/* 
+        NEW: Changed Position.Bottom to Position.Right, added top: 70% 
+        This is for the branch going DOWN, so it exits near the bottom-right corner.
+      */}
       <Handle
         type="source"
-        position={Position.Bottom}
+        position={Position.Right}
         id="branch_bottom"
+        style={{ top: '70%' }}
         className="!opacity-0 !w-2 !h-2 !border-0"
       />
+
+      {/* Your existing loop handles */}
+      <Handle type="source" id="loop_top" position={Position.Top} style={{ left: '30%' }} className="!opacity-0 !w-2 !h-2 !border-0" />
+      <Handle type="target" id="loop_top" position={Position.Top} style={{ left: '70%' }} className="!opacity-0 !w-2 !h-2 !border-0" />
+      <Handle type="source" id="loop_bottom" position={Position.Bottom} style={{ left: '30%' }} className="!opacity-0 !w-2 !h-2 !border-0" />
+      <Handle type="target" id="loop_bottom" position={Position.Bottom} style={{ left: '70%' }} className="!opacity-0 !w-2 !h-2 !border-0" />
     </>
   );
 });
