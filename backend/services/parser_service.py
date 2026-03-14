@@ -66,6 +66,24 @@ def parse_file(file_path: str, rel_path: str) -> dict[str, Any]:
     }
 
 
+def _find_enclosing_function(node: Any) -> str:
+    """Walk up from a node to find the nearest enclosing function name."""
+    current = node.parent
+    while current is not None:
+        if current.type in ("function_definition", "function_declaration", "method_definition", "arrow_function"):
+            name_node = current.child_by_field_name("name")
+            if name_node:
+                return _text(name_node)
+            parent = current.parent
+            if parent and parent.type == "variable_declarator":
+                n = parent.child_by_field_name("name")
+                if n:
+                    return _text(n)
+            return ""
+        current = current.parent
+    return ""
+
+
 def _extract_python(
     root: Any,
     rel_path: str,
@@ -127,7 +145,8 @@ def _extract_python(
         elif node.type == "call":
             func_node = node.child_by_field_name("function")
             if func_node:
-                calls.append(("", _text(func_node)))
+                caller = _find_enclosing_function(node)
+                calls.append((caller, _text(func_node)))
 
 
 def _extract_js_ts(
@@ -206,7 +225,8 @@ def _extract_js_ts(
         elif node.type == "call_expression":
             func_node = node.child_by_field_name("function")
             if func_node:
-                calls.append(("", _text(func_node)))
+                caller = _find_enclosing_function(node)
+                calls.append((caller, _text(func_node)))
 
 
 def _walk(node: Any):

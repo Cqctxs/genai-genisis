@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import tempfile
@@ -69,7 +70,7 @@ async def clone_repo(repo_url: str, github_token: str) -> str:
 
     log.info("cloning_repo", repo_url=repo_url, dest=temp_dir)
     try:
-        Repo.clone_from(clone_url, temp_dir, depth=1)
+        await asyncio.to_thread(Repo.clone_from, clone_url, temp_dir, depth=1)
     except Exception as e:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to clone repository: {e}") from e
