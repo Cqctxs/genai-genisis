@@ -4,7 +4,9 @@ import traceback
 
 import modal
 
-SANDBOX_TIMEOUT = 60
+BENCHMARK_TIMEOUT = 60
+DEP_INSTALL_TIMEOUT = 120
+FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + DEP_INSTALL_TIMEOUT + 30  # headroom
 
 app = modal.App("codemark-benchmarks")
 
@@ -151,7 +153,45 @@ def _write_repo_files(workdir: str, repo_files: dict[str, str]) -> None:
             f.write(content)
 
 
-@app.function(image=python_image, timeout=SANDBOX_TIMEOUT)
+def _install_python_deps(workdir: str) -> str:
+    """Install Python dependencies from requirements.txt. Returns install stderr."""
+    import os
+    import subprocess
+
+    req_path = os.path.join(workdir, "requirements.txt")
+    if not os.path.exists(req_path):
+        return ""
+
+    result = subprocess.run(
+        ["pip", "install", "-r", req_path, "--quiet", "--no-cache-dir"],
+        capture_output=True,
+        text=True,
+        timeout=DEP_INSTALL_TIMEOUT,
+        cwd=workdir,
+    )
+    return result.stderr
+
+
+def _install_js_deps(workdir: str) -> str:
+    """Install Node.js dependencies from package.json. Returns install stderr."""
+    import os
+    import subprocess
+
+    pkg_path = os.path.join(workdir, "package.json")
+    if os.path.exists(pkg_path):
+        result = subprocess.run(
+            ["npm", "install", "--production", "--no-audit", "--no-fund"],
+            capture_output=True,
+            text=True,
+            timeout=DEP_INSTALL_TIMEOUT,
+            cwd=workdir,
+        )
+        return result.stderr
+
+    return ""
+
+
+@app.function(image=python_image, timeout=FUNCTION_TIMEOUT)
 def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     import subprocess
     import tempfile
@@ -159,6 +199,7 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
 
     workdir = tempfile.mkdtemp()
     _write_repo_files(workdir, repo_files)
+    dep_stderr = _install_python_deps(workdir)
 
     with open(os.path.join(workdir, "_benchmark_inner.py"), "w") as f:
         f.write(code)
@@ -170,17 +211,22 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
         ["python", os.path.join(workdir, "_benchmark.py")],
         capture_output=True,
         text=True,
-        timeout=SANDBOX_TIMEOUT,
+        timeout=BENCHMARK_TIMEOUT,
         cwd=workdir,
     )
+
+    stderr = result.stderr
+    if dep_stderr and result.returncode != 0:
+        stderr = f"[pip install output]\n{dep_stderr}\n\n[benchmark stderr]\n{stderr}"
+
     return {
         "stdout": result.stdout,
-        "stderr": result.stderr,
-        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {result.stderr[-500:]}",
+        "stderr": stderr,
+        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {stderr[-500:]}",
     }
 
 
-@app.function(image=node_image, timeout=SANDBOX_TIMEOUT)
+@app.function(image=node_image, timeout=FUNCTION_TIMEOUT)
 def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     import subprocess
     import tempfile
@@ -188,6 +234,7 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
 
     workdir = tempfile.mkdtemp()
     _write_repo_files(workdir, repo_files)
+    dep_stderr = _install_js_deps(workdir)
 
     with open(os.path.join(workdir, "_benchmark_inner.js"), "w") as f:
         f.write(_esm_to_cjs(code))
@@ -199,19 +246,29 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
         ["node", os.path.join(workdir, "_benchmark.js")],
         capture_output=True,
         text=True,
-        timeout=SANDBOX_TIMEOUT,
+        timeout=BENCHMARK_TIMEOUT,
         cwd=workdir,
     )
+
+    stderr = result.stderr
+    if dep_stderr and result.returncode != 0:
+        stderr = f"[npm install output]\n{dep_stderr}\n\n[benchmark stderr]\n{stderr}"
+
     return {
         "stdout": result.stdout,
-        "stderr": result.stderr,
-        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {result.stderr[-500:]}",
+        "stderr": stderr,
+        "error": None if result.returncode == 0 else f"Exit code {result.returncode}: {stderr[-500:]}",
     }
 
 
+_fn_cache: dict[str, modal.Function] = {}
+
+
 def _lookup_function(name: str) -> modal.Function:
-    """Look up a deployed Modal function by name."""
-    return modal.Function.from_name("codemark-benchmarks", name)
+    """Look up a deployed Modal function by name, with caching."""
+    if name not in _fn_cache:
+        _fn_cache[name] = modal.Function.from_name("codemark-benchmarks", name)
+    return _fn_cache[name]
 
 
 async def run_benchmark(
@@ -220,32 +277,49 @@ async def run_benchmark(
     repo_files: dict[str, str] | None = None,
 ) -> dict:
     """Execute benchmark code in a Modal sandbox and return results."""
+    import time
+
     import structlog
+
+    from services.log_utils import log_block
+
     log = structlog.get_logger()
 
     files = repo_files or {}
+    func_name = "_run_python_benchmark" if language == "python" else "_run_js_benchmark"
 
-    log.info(
-        "modal_benchmark_start",
-        language=language,
-        script_chars=len(code),
-        repo_files_count=len(files),
-        script_preview=code[:200].replace("\n", "\\n"),
+    repo_file_list = "\n".join(f"  {p} ({len(c)} chars)" for p, c in files.items()) if files else "  (none)"
+
+    log_block(
+        f"MODAL CALL [{language}]",
+        metadata={
+            "function": func_name,
+            "language": language,
+            "script_chars": len(code),
+            "repo_files_count": len(files),
+        },
+        sections={
+            "BENCHMARK SCRIPT": code,
+            "REPO FILES": repo_file_list,
+        },
+        color="magenta",
     )
 
+    start = time.monotonic()
     try:
-        func_name = "_run_python_benchmark" if language == "python" else "_run_js_benchmark"
         fn = _lookup_function(func_name)
-        log.info("modal_calling_remote", function=func_name)
         result = await asyncio.to_thread(fn.remote, code, files)
-        log.info("modal_remote_returned", function=func_name)
     except Exception as e:
-        log.error(
-            "modal_sandbox_failed",
-            language=language,
-            error_type=type(e).__name__,
-            error=str(e),
-            traceback=traceback.format_exc(),
+        elapsed = time.monotonic() - start
+        log_block(
+            f"MODAL ERROR [{language}]",
+            metadata={
+                "function": func_name,
+                "error_type": type(e).__name__,
+                "elapsed_s": round(elapsed, 2),
+            },
+            sections={"ERROR": str(e), "TRACEBACK": traceback.format_exc()},
+            color="red",
         )
         return {
             "stdout": "",
@@ -253,15 +327,28 @@ async def run_benchmark(
             "error": str(e),
         }
 
-    log.info(
-        "modal_benchmark_result",
-        language=language,
-        has_error=result.get("error") is not None,
-        stdout_chars=len(result.get("stdout", "")),
-        stderr_chars=len(result.get("stderr", "")),
-        stdout_preview=result.get("stdout", "")[:300].replace("\n", "\\n"),
-        stderr_preview=result.get("stderr", "")[:300].replace("\n", "\\n") if result.get("stderr") else None,
-        error=result.get("error"),
+    elapsed = time.monotonic() - start
+    stdout = result.get("stdout", "")
+    stderr = result.get("stderr", "")
+    error = result.get("error")
+
+    sections: dict[str, str] = {"STDOUT": stdout if stdout else "(empty)"}
+    if stderr:
+        sections["STDERR"] = stderr
+    if error:
+        sections["ERROR"] = error
+
+    log_block(
+        f"MODAL RESULT [{language}]",
+        metadata={
+            "function": func_name,
+            "elapsed_s": round(elapsed, 2),
+            "has_error": error is not None,
+            "stdout_chars": len(stdout),
+            "stderr_chars": len(stderr),
+        },
+        sections=sections,
+        color="cyan" if not error else "yellow",
     )
 
     return result
