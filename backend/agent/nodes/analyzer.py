@@ -3,7 +3,7 @@ import json
 
 import structlog
 
-from agent.schemas import ASTData, AnalysisResult
+from agent.schemas import AnalysisResult
 from agent.state import AgentState
 from services.gemini_service import GEMINI_PRO, get_agent
 from services.github_service import get_file_tree, read_file
@@ -27,9 +27,9 @@ Your job is to identify performance bottlenecks. Look for:
 Return a structured analysis with specific hotspots, their severity, and reasoning."""
 
 
-async def parse_ast_node(state: AgentState) -> AgentState:
+async def parse_ast_node(state: AgentState) -> dict:
     """Extract AST data from the repository using tree-sitter."""
-    repo_path = state["repo_path"]
+    repo_path = state.get("repo_path", "")
     file_tree = get_file_tree(repo_path)
 
     log.info("parsing_ast", num_files=len(file_tree))
@@ -45,11 +45,11 @@ async def parse_ast_node(state: AgentState) -> AgentState:
     }
 
 
-async def analyze_node(state: AgentState) -> AgentState:
+async def analyze_node(state: AgentState) -> dict:
     """Use Gemini to analyze the AST map and identify performance bottlenecks."""
-    ast_map = state["ast_map"]
-    repo_path = state["repo_path"]
-    file_tree = state["file_tree"]
+    ast_map = state.get("ast_map", {})
+    repo_path = state.get("repo_path", "")
+    file_tree = state.get("file_tree", [])
 
     key_files = {}
     for f in file_tree[:20]:
@@ -74,11 +74,12 @@ async def analyze_node(state: AgentState) -> AgentState:
 
     log.info("analyzing_repo", num_key_files=len(key_files))
     result = await agent.run(user_prompt)
+    analysis: AnalysisResult = result.output  # type: ignore[assignment]
 
     return {
         **state,
-        "analysis": result.output.model_dump(),
+        "analysis": analysis.model_dump(),
         "messages": state.get("messages", []) + [
-            f"Identified {len(result.output.hotspots)} potential bottlenecks"
+            f"Identified {len(analysis.hotspots)} potential bottlenecks"
         ],
     }
