@@ -146,13 +146,39 @@ async def create_optimization_pr(
     headers = _build_headers(token)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
+        # Check token scopes first
+        scope_check = await client.get(f"{GITHUB_API}/user", headers=headers)
+        scopes = scope_check.headers.get("x-oauth-scopes", "(not present)")
+        log.info("token_scopes", scopes=scopes, is_bot=is_bot)
+
         # 1. Get default branch and its latest commit SHA
         repo_resp = await client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}",
             headers=headers,
         )
         repo_resp.raise_for_status()
-        default_branch = repo_resp.json()["default_branch"]
+        repo_data = repo_resp.json()
+        default_branch = repo_data["default_branch"]
+        permissions = repo_data.get("permissions", {})
+        log.info(
+            "pr_repo_permissions",
+            owner=owner,
+            repo=repo,
+            permissions=permissions,
+            is_bot=is_bot,
+        )
+        if not permissions.get("push"):
+            log.error(
+                "user_token_no_push_access",
+                owner=owner,
+                repo=repo,
+                permissions=permissions,
+            )
+            raise PermissionError(
+                f"GitHub token does not have push access to {owner}/{repo}. "
+                "Please revoke and re-authorize the app at https://github.com/settings/applications "
+                "to grant the 'repo' scope."
+            )
 
         ref_resp = await client.get(
             f"{GITHUB_API}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
