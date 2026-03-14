@@ -212,7 +212,7 @@ def _extract_result(state: AgentState) -> dict:
 
 
 @rt.function_node
-async def optimization_pipeline(repo_url: str, github_token: str) -> dict:
+async def optimization_pipeline(repo_url: str, github_token: str, optimization_bias: str = "balanced") -> dict:
     """Main orchestration flow — replaces the LangGraph StateGraph.
 
     Each stage calls the existing node functions directly (their signatures
@@ -223,6 +223,7 @@ async def optimization_pipeline(repo_url: str, github_token: str) -> dict:
     state: AgentState = {
         "repo_url": repo_url,
         "github_token": github_token,
+        "optimization_bias": optimization_bias,
         "messages": [],
     }
 
@@ -312,13 +313,14 @@ async def run_optimization_pipeline(
     repo_url: str,
     github_token: str,
     queue: asyncio.Queue | None = None,
+    optimization_bias: str = "balanced",
 ) -> dict:
     """Public entry point — creates a per-request Railtracks Flow and runs it.
 
     The signature is intentionally identical to the old LangGraph version so
     that ``main.py`` requires zero changes.
     """
-    log.info("pipeline_start", repo_url=repo_url)
+    log.info("pipeline_start", repo_url=repo_url, optimization_bias=optimization_bias)
     pipeline_start = time.monotonic()
 
     broadcast_cb = None
@@ -337,7 +339,7 @@ async def run_optimization_pipeline(
         timeout=900.0,
     )
 
-    result = await flow.ainvoke(repo_url, github_token)
+    result = await flow.ainvoke(repo_url, github_token, optimization_bias)
 
     total_elapsed = time.monotonic() - pipeline_start
     log.info("pipeline_complete", total_time_s=round(total_elapsed, 1))

@@ -61,7 +61,9 @@ in the sandbox. Regenerate a FIXED version that avoids the error.
 ```
 
 IMPORTANT:
-- The script runs in isolation — mock ALL external dependencies and data.
+- The script runs in a sandbox with common packages pre-installed, but you should
+  STILL prefer mocking over importing when the dependency isn't essential.
+- Do NOT run `npm install`, `pip install`, or any package manager commands — this will crash the container.
 - Ensure mock data shapes match exactly what the function expects.
 - The language is: {bench.language}
 - Do NOT reuse the broken mock data from the previous attempt."""
