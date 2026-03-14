@@ -41,13 +41,13 @@ node_image = (
     .apt_install("curl")
     .run_commands(
         "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash",
-        "bash -i -c 'nvm install --lts && nvm use --lts'",
+        "bash -c 'nvm install --lts && nvm use --lts'",
     )
     .run_commands(
-        "bash -i -c 'ln -sf /root/.nvm/versions/node/*/bin/node /usr/local/bin/node && ln -sf /root/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && ln -sf /root/.nvm/versions/node/*/bin/npx /usr/local/bin/npx'"
+        "bash -c 'ln -sf /root/.nvm/versions/node/*/bin/node /usr/local/bin/node && ln -sf /root/.nvm/versions/node/*/bin/npm /usr/local/bin/npm && ln -sf /root/.nvm/versions/node/*/bin/npx /usr/local/bin/npx'"
     )
     .run_commands(
-        "bash -i -c 'npm install -g "
+        "bash -c 'npm install -g "
         "lodash@latest express@latest react@latest react-dom@latest next@latest "
         "axios@latest framer-motion@latest zod@latest "
         "typescript@latest ts-node@latest "

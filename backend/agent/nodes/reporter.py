@@ -52,10 +52,11 @@ async def report_node(state: AgentState) -> dict:
     sandbox_specs = await get_sandbox_specs()
     summary = await _generate_summary(function_comparisons, hotspots, score)
 
-    # Generate detailed benchmark information
-    benchmark_details = await _generate_benchmark_details(
+    # Always regenerate benchmark details with final results to show accurate before/after metrics
+    benchmark_details_objs = await _generate_benchmark_details(
         benchmark_code, initial_results, final_results, function_comparisons
     )
+    benchmark_details = [bd.model_dump() for bd in benchmark_details_objs]
 
     report = ComparisonReport(
         functions=function_comparisons,
@@ -87,7 +88,7 @@ async def report_node(state: AgentState) -> dict:
     return {
         **state,
         "comparison": report.model_dump(),
-        "benchmark_details": [bd.model_dump() for bd in benchmark_details],
+        "benchmark_details": benchmark_details,
         "messages": state.get("messages", []) + [
             f"CodeMark Score: {report.benchy_score.overall_before:.0f} -> {report.benchy_score.overall_after:.0f}"
         ],
@@ -165,43 +166,39 @@ async def _generate_benchmark_details(
     final_results: list[dict],
     comparisons: list[FunctionComparison],
 ) -> list[BenchmarkDetail]:
-    """Generate detailed benchmark information including summaries."""
+    """Generate detailed benchmark information including summaries, parallelized."""
     if not benchmark_code:
         return []
 
     initial_by_fn = {(r.get("function_name", ""), r.get("file", "")): r for r in initial_results}
     final_by_fn = {(r.get("function_name", ""), r.get("file", "")): r for r in final_results}
+    comparison_by_fn = {c.function_name: c for c in comparisons}
 
-    details = []
     agent = get_agent(SummaryText, BENCHMARK_DETAIL_PROMPT, GEMINI_FLASH)
 
-    for bench in benchmark_code[:10]:
+    async def _process_bench(bench: dict) -> BenchmarkDetail | None:
         fn_name = bench.get("target_function", "")
         bench_file = bench.get("file", "")
         key = (fn_name, bench_file)
         initial = initial_by_fn.get(key, {})
         final = final_by_fn.get(key, {})
 
-        # Find comparison for this function
-        comparison = next((c for c in comparisons if c.function_name == fn_name), None)
+        comparison = comparison_by_fn.get(fn_name)
         if not comparison:
-            continue
+            return None
 
-        # Generate benchmark summary
         summary = ""
         try:
-            summary_prompt = f"""This benchmark tests the function `{fn_name}` in file `{bench.get('file', '')}`.
-
-The benchmark script:
-```{bench.get('language', 'python')}
-{bench.get('script_content', '')[:1000]}
-```
-
-Before optimization: {initial.get("avg_time_ms", 0):.2f}ms, {initial.get("memory_peak_mb", 0):.1f}MB
-After optimization: {final.get("avg_time_ms", 0):.2f}ms, {final.get("memory_peak_mb", 0):.1f}MB
-
-Summarize what this benchmark tests."""
-
+            summary_prompt = (
+                f"This benchmark tests the function `{fn_name}` in file `{bench_file}`.\n\n"
+                f"The benchmark script:\n"
+                f"```{bench.get('language', 'python')}\n"
+                f"{bench.get('script_content', '')[:1000]}\n"
+                f"```\n\n"
+                f"Before optimization: {initial.get('avg_time_ms', 0):.2f}ms, {initial.get('memory_peak_mb', 0):.1f}MB\n"
+                f"After optimization: {final.get('avg_time_ms', 0):.2f}ms, {final.get('memory_peak_mb', 0):.1f}MB\n\n"
+                f"Summarize what this benchmark tests."
+            )
             result = await asyncio.wait_for(
                 run_agent_logged(agent, summary_prompt, node_name=f"benchmark_detail_{fn_name}"),
                 timeout=10,
@@ -212,9 +209,9 @@ Summarize what this benchmark tests."""
             log.warning("benchmark_detail_summary_failed", function=fn_name, error=str(e))
             summary = f"Benchmark for {fn_name}"
 
-        detail = BenchmarkDetail(
+        return BenchmarkDetail(
             function_name=fn_name,
-            file=bench.get("file", ""),
+            file=bench_file,
             language=bench.get("language", ""),
             script_content=bench.get("script_content", ""),
             before_time_ms=float(initial.get("avg_time_ms", 0)),
@@ -224,6 +221,6 @@ Summarize what this benchmark tests."""
             speedup_factor=comparison.speedup_factor,
             summary=summary,
         )
-        details.append(detail)
 
-    return details
+    raw = await asyncio.gather(*[_process_bench(b) for b in benchmark_code[:10]])
+    return [d for d in raw if d is not None]

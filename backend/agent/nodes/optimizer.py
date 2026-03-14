@@ -9,6 +9,8 @@ from agent.schemas import AnalysisResult, Hotspot, OptimizationChange, Optimizat
 from agent.state import AgentState
 from services.gemini_service import (
     GEMINI_FLASH,
+    GEMINI_PRO,
+    PRO_SETTINGS,
     run_agent_logged,
 )
 from services.github_service import read_file
@@ -59,7 +61,7 @@ def _is_destructive_change(change: OptimizationChange) -> bool:
 
     return False
 
-OPTIMIZER_PROMPT = """You are an elite performance optimization engineer. Given:
+OPTIMIZER_PROMPT = """You are an elite performance optimization engineer. Your goal is to improve performance while ensuring absolute functional parity. Given:
 1. A performance bottleneck with severity and reasoning
 2. Benchmark results showing actual timing/memory data
 3. The source code of the affected file
@@ -70,17 +72,21 @@ Generate optimized versions of the bottleneck code. For each change:
 - Explain what was changed and why
 - Estimate the expected improvement
 
-Optimization strategies to consider:
-- Algorithm improvements (e.g., O(n^2) -> O(n log n))
-- Async/concurrent I/O instead of blocking calls
-- Batch API calls instead of sequential ones
-- Add caching for repeated computations
-- Reduce memory allocations in hot loops
-- Use more efficient data structures
-- Connection pooling for database queries
-- Lazy evaluation where appropriate
+CRITICAL REQUIREMENTS:
+- The optimized functionality MUST MATCH EXACTLY the original functionality. Ensure edge cases, return types, and exceptions remain identical.
+- Adapt your optimization strategy based on the program's context:
+  - For single-input / compute-bound programs: Focus purely on algorithmic efficiency, memory allocation, reducing unnecessary operations, and data structures. Do not attempt I/O concurrency or batching optimizations where they do not naturally apply.
+  - For I/O bound programs (DB, network): Focus on async/concurrent I/O, connection pooling, and batching.
+  - For large datasets or iteration: Use generators, lazy evaluation, stream processing, or vectorized operations (e.g. NumPy if available) to minimize memory footprint and execution time.
+  - For repeated heavy calls/computations: Add caching/memoization appropriately.
 
-Be precise: only modify code that actually impacts performance. Preserve correctness."""
+Standard Optimization strategies to consider when applicable:
+- Algorithm improvements (e.g., O(n^2) -> O(n log n) -> O(1))
+- Reducing memory allocations in hot loops (in-place operations, avoiding unnecessary copies/list comprehensions)
+- Using more efficient data structures (e.g., sets for lookups, deque for queues, tuples instead of lists)
+- Async/concurrent I/O instead of blocking calls (ONLY if multi-input or actually I/O bound)
+
+Be extremely precise: only modify code that actually impacts performance, and PRESERVE STRICT CORRECTNESS."""
 
 BIAS_INSTRUCTIONS: dict[str, str] = {
     "speed": (
@@ -166,16 +172,16 @@ not just different from your last attempt.
 
 
 def _create_optimizer_agent() -> Agent:
-    """Create an optimizer agent."""
+    """Create an optimizer agent using Gemini Pro with MEDIUM thinking."""
     agent = Agent(
-        GEMINI_FLASH,
+        GEMINI_PRO,
         output_type=OptimizationPlan,
         system_prompt=OPTIMIZER_PROMPT,
     )
 
     agent._codemark_system_prompt = OPTIMIZER_PROMPT  # type: ignore[attr-defined]
     agent._codemark_output_type = "OptimizationPlan"  # type: ignore[attr-defined]
-    agent._model_str = GEMINI_FLASH  # type: ignore[attr-defined]
+    agent._model_str = GEMINI_PRO  # type: ignore[attr-defined]
 
     return agent
 
@@ -262,6 +268,7 @@ Optimize the bottleneck functions in this file."""
         result = await run_agent_logged(
             agent, prompt,
             node_name=f"optimize_{file_path.split('/')[-1]}",
+            model_settings=PRO_SETTINGS,
         )
         plan: OptimizationPlan = result.output  # type: ignore[assignment]
 

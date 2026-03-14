@@ -96,6 +96,30 @@ def _should_stop_retrying(state: AgentState) -> tuple[bool, str]:
     )
 
 
+async def _generate_initial_benchmark_details(state: AgentState) -> dict:
+    """Generate benchmark detail summaries early, in parallel with optimization."""
+    from agent.nodes.reporter import _generate_benchmark_details
+    from agent.schemas import FunctionComparison
+    from services.scoring_service import compute_benchy_score
+
+    benchmark_code = state.get("benchmark_code", [])
+    initial_results = state.get("initial_results", [])
+    hotspots = state.get("analysis", {}).get("hotspots", [])
+
+    if not benchmark_code or not initial_results:
+        return {"benchmark_details": []}
+
+    # Compute comparisons from initial results (before optimization)
+    _, comparisons = compute_benchy_score(initial_results, initial_results, hotspots)
+
+    # Generate summaries for initial benchmarks
+    benchmark_details = await _generate_benchmark_details(
+        benchmark_code, initial_results, initial_results, comparisons
+    )
+
+    return {"benchmark_details": [bd.model_dump() for bd in benchmark_details]}
+
+
 async def _rerun_benchmarks(state: AgentState) -> dict:
     """Write optimized files to disk and re-run benchmarks."""
     repo_path = state.get("repo_path", "")
@@ -223,6 +247,7 @@ def _extract_result(state: AgentState) -> dict:
     return {
         "graph_data": state.get("graph_data", {}),
         "comparison": comparison,
+        "benchmark_details": state.get("benchmark_details", []),
         "optimized_files": state.get("optimized_files", {}),
         "initial_results": initial_results,
         "final_results": final_results,
@@ -273,19 +298,25 @@ async def optimization_pipeline(
     await rt.broadcast("Streaming analysis and benchmarks per chunk...")
     state.update(await chunk_analyze_node(state))
 
-    # ── Parallel: visualize + optimize ───────────────────────────────────
-    await rt.broadcast("Generating visualization and optimizations...")
+    # ── Parallel: visualize + optimize + generate benchmark summaries ────────
+    await rt.broadcast("Generating visualization, optimizations, and benchmark summaries...")
     viz_task = visualize_node(state)
     opt_task = optimize_node(state)
-    viz_result, opt_result = await asyncio.gather(viz_task, opt_task)
+    bench_task = _generate_initial_benchmark_details(state)
+    viz_result, opt_result, bench_result = await asyncio.gather(viz_task, opt_task, bench_task)
+    # ── Visualize (background) + Optimize (critical path) ────────────────
+    # Visualization is only needed for the final result payload — run it in
+    # the background so the optimization retry loop can start immediately.
+    await rt.broadcast("Generating visualization and optimizations...")
+    viz_bg_task = asyncio.create_task(visualize_node(AgentState(**state)))
+    opt_result = await optimize_node(state)
 
     base_msgs = list(state.get("messages", []))
     base_count = len(base_msgs)
-    new_viz_msgs = viz_result.get("messages", [])[base_count:]
     new_opt_msgs = opt_result.get("messages", [])[base_count:]
 
-    state["graph_data"] = viz_result.get("graph_data", {})
     state["optimized_files"] = opt_result.get("optimized_files", {})
+    state["benchmark_details"] = bench_result.get("benchmark_details", [])
     state["messages"] = base_msgs + new_viz_msgs + new_opt_msgs
 
     # ── Optimization retry loop ──────────────────────────────────────────
@@ -313,6 +344,15 @@ async def optimization_pipeline(
 
         await rt.broadcast("Re-optimizing based on benchmark feedback...")
         state.update(await optimize_node(state))
+
+    # ── Collect visualization result ─────────────────────────────────────
+    # The background task was started before the retry loop; collect it now.
+    try:
+        viz_result = await viz_bg_task
+        state["graph_data"] = viz_result.get("graph_data", {})
+    except Exception as e:
+        log.warning("visualize_background_failed", error=str(e))
+        state.setdefault("graph_data", {})
 
     # ── Report ───────────────────────────────────────────────────────────
     await rt.broadcast("Generating CodeMark report...")
