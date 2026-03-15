@@ -29,7 +29,8 @@ The benchmark script runs inside an isolated sandbox where:
   **CRITICAL**: If you are mocking an I/O bound external call (like network or DB), your mock MUST include realistic artificial latency (e.g., `time.sleep(0.05)` or `await new Promise(r => setTimeout(r, 50))`) so concurrency optimizations can demonstrate actual speedup without pure CPU lock overhead.
 - If you mock functions using `unittest.mock.patch`, you MUST import the module you are patching FIRST. (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Otherwise it will fail with AttributeError.
 - **CRITICAL MOCK RULE**: If you use `unittest.mock.patch` or `MagicMock` to mock functions that are passed as arguments to other functions, you MUST explicitly assign a `__name__` attribute to the mock object (e.g., `mock_function.__name__ = 'my_function'`) to prevent `AttributeError` during introspection such as `func.__name__`.
-- **PREFER REAL CODE OVER MOCKING**: Do NOT aggressively mock internal target functions. Always prefer executing the actual repository code. Only mock external dependencies (network, database, file system) that would hang or destroy the environment. Mocking the function you are benchmarking defeats the purpose of the benchmark.
+- **PREFER REAL CODE OVER MOCKING**: Do NOT aggressively mock internal target functions. Always prefer executing the actual repository code. Only mock external dependencies (network APIs, databases) that would hang or destroy the environment.
+- **FILE I/O IS FULLY ALLOWED**: The sandbox has an ephemeral filesystem. **Do NOT mock `open()`, `builtins.open`, or `fs.writeFileSync`**. Creating, reading, and writing temporary files in the working directory is expected and required for accurate I/O benchmarking. Mocking the file system ruins the benchmark!
 
 ## Rules
 
