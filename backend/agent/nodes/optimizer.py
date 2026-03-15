@@ -198,6 +198,7 @@ async def _optimize_file(
     correctness_failures: list[dict] | None = None,
     previous_results: list[dict] | None = None,
     bias_instruction: str = "",
+    fast_mode: bool = False,
 ) -> tuple[str, list[OptimizationChange], str]:
     """Optimize a single file's hotspots. Returns (file_path, changes, optimized_content).
 
@@ -324,22 +325,26 @@ Optimize the bottleneck functions in this file."""
             non_destructive.append(change)
 
         # Gate 2: Reviewer agent critique (LLM-based, parallel with other files)
-        reviews = await review_optimization(non_destructive, file_content, file_path)
-
-        review_by_fn = {r.function_name: r for r in reviews}
         accepted_changes: list[OptimizationChange] = []
-        for change in non_destructive:
-            review = review_by_fn.get(change.function_name)
-            if review and not review.approved:
-                log.warning(
-                    "optimization_rejected_by_reviewer",
-                    file=change.file,
-                    function=change.function_name,
-                    reason=review.reason[:200],
-                    suggestion=review.suggestion[:200],
-                )
-                continue
-            accepted_changes.append(change)
+        if fast_mode:
+            log.info("optimize_fast_mode_skip_review", file=file_path)
+            accepted_changes = non_destructive
+        else:
+            reviews = await review_optimization(non_destructive, file_content, file_path)
+
+            review_by_fn = {r.function_name: r for r in reviews}
+            for change in non_destructive:
+                review = review_by_fn.get(change.function_name)
+                if review and not review.approved:
+                    log.warning(
+                        "optimization_rejected_by_reviewer",
+                        file=change.file,
+                        function=change.function_name,
+                        reason=review.reason[:200],
+                        suggestion=review.suggestion[:200],
+                    )
+                    continue
+                accepted_changes.append(change)
 
         optimized = file_content
         for change in accepted_changes:
@@ -381,6 +386,7 @@ async def optimize_node(state: AgentState) -> dict:
     repo_path = state.get("repo_path", "")
     correctness_failures = state.get("correctness_failures", [])
     optimization_bias = state.get("optimization_bias", "balanced")
+    fast_mode = state.get("fast_mode", False)
     bias_instruction = BIAS_INSTRUCTIONS.get(
         optimization_bias, BIAS_INSTRUCTIONS["balanced"]
     )
@@ -425,6 +431,7 @@ async def optimize_node(state: AgentState) -> dict:
             correctness_failures=correctness_failures,
             previous_results=final_results if is_retry else None,
             bias_instruction=bias_instruction,
+            fast_mode=fast_mode,
         )
         for file_path, content in affected_files.items()
     ]

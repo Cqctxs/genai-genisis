@@ -259,7 +259,7 @@ def _extract_result(state: AgentState) -> dict:
 
 @rt.function_node
 async def optimization_pipeline(
-    repo_url: str, github_token: str, optimization_bias: str = "balanced"
+    repo_url: str, github_token: str, optimization_bias: str = "balanced", fast_mode: bool = False
 ) -> dict:
     """Main orchestration flow — replaces the LangGraph StateGraph.
 
@@ -272,6 +272,7 @@ async def optimization_pipeline(
         "repo_url": repo_url,
         "github_token": github_token,
         "optimization_bias": optimization_bias,
+        "fast_mode": fast_mode,
         "messages": [],
     }
 
@@ -361,6 +362,7 @@ async def run_optimization_pipeline(
     github_token: str,
     queue: asyncio.Queue | None = None,
     optimization_bias: str = "balanced",
+    fast_mode: bool = False,
 ) -> dict:
     """Public entry point — creates a per-request Railtracks Flow and runs it.
 
@@ -389,7 +391,7 @@ async def run_optimization_pipeline(
         timeout=900.0,
     )
 
-    result = await flow.ainvoke(repo_url, github_token, optimization_bias)
+    result = await flow.ainvoke(repo_url, github_token, optimization_bias, fast_mode)
 
     total_elapsed = time.monotonic() - pipeline_start
     log.info("pipeline_complete", total_time_s=round(total_elapsed, 1))
@@ -401,6 +403,7 @@ async def _run_local_pipeline(
     files: dict[str, str],
     language: str,
     optimization_bias: str = "balanced",
+    fast_mode: bool = False,
     broadcast: object = None,
 ) -> dict:
     """Pipeline variant for local files — no git clone, no PR creation."""
@@ -413,8 +416,9 @@ async def _run_local_pipeline(
 
     state: AgentState = {
         "repo_url": "",
-        "github_token": "",
+        "github_token": "",  # Not used for local
         "optimization_bias": optimization_bias,
+        "fast_mode": fast_mode,
         "messages": [],
     }
 
@@ -484,6 +488,7 @@ async def run_local_optimization_pipeline(
     language: str,
     queue: asyncio.Queue | None = None,
     optimization_bias: str = "balanced",
+    fast_mode: bool = False,
 ) -> dict:
     """Public entry point for local file analysis."""
     log.info(
@@ -506,7 +511,7 @@ async def run_local_optimization_pipeline(
             )
 
     result = await _run_local_pipeline(
-        files, language, optimization_bias, broadcast=broadcast_cb
+        files, language, optimization_bias, fast_mode, broadcast=broadcast_cb
     )
 
     total_elapsed = time.monotonic() - pipeline_start

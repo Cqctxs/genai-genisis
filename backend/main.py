@@ -52,12 +52,14 @@ class AnalyzeRequest(BaseModel):
     repo_url: HttpUrl
     github_token: str
     optimization_bias: str = "balanced"
+    fast_mode: bool = False
 
 
 class AnalyzeLocalRequest(BaseModel):
     files: dict[str, str]
     language: str = "python"
     optimization_bias: str = "balanced"
+    fast_mode: bool = False
 
 
 class AnalyzeResponse(BaseModel):
@@ -90,7 +92,7 @@ async def analyze_repo(request: Request, body: AnalyzeRequest):
 
     asyncio.create_task(
         _run_agent(
-            job_id, str(body.repo_url), body.github_token, queue, body.optimization_bias
+            job_id, str(body.repo_url), body.github_token, queue, body.optimization_bias, body.fast_mode
         )
     )
 
@@ -104,13 +106,14 @@ async def _run_agent(
     github_token: str,
     queue: asyncio.Queue,
     optimization_bias: str = "balanced",
+    fast_mode: bool = False,
 ):
     from agent.graph import run_optimization_pipeline
 
     try:
         jobs[job_id]["status"] = "running"
         result = await run_optimization_pipeline(
-            repo_url, github_token, queue, optimization_bias
+            repo_url, github_token, queue, optimization_bias, fast_mode
         )
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["result"] = result
@@ -183,7 +186,7 @@ async def analyze_local(request: Request, body: AnalyzeLocalRequest):
 
     asyncio.create_task(
         _run_local_agent(
-            job_id, body.files, body.language, queue, body.optimization_bias
+            job_id, body.files, body.language, queue, body.optimization_bias, body.fast_mode
         )
     )
 
@@ -197,13 +200,14 @@ async def _run_local_agent(
     language: str,
     queue: asyncio.Queue,
     optimization_bias: str = "balanced",
+    fast_mode: bool = False,
 ):
     from agent.graph import run_local_optimization_pipeline
 
     try:
         jobs[job_id]["status"] = "running"
         result = await run_local_optimization_pipeline(
-            files, language, queue, optimization_bias
+            files, language, queue, optimization_bias, fast_mode
         )
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["result"] = result
