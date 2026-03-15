@@ -217,7 +217,7 @@ export default function LandingPage() {
 
         {/* Scroll Indicator - Always anchored to viewport bottom */}
         <div
-          className="absolute z-20 bottom-8 left-1/2 -translate-x-1/2 animate-bounce hidden sm:block transition-opacity duration-500 pointer-events-none"
+          className="absolute z-20 bottom-10 left-1/2 -translate-x-1/2 animate-bounce hidden sm:block transition-opacity duration-500 pointer-events-none"
           style={{ opacity: showArrow ? 0.4 : 0 }}
         >
           <svg
