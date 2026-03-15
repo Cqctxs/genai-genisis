@@ -71,10 +71,23 @@ node_image = (
 
 PYTHON_MEMORY_WRAPPER = """\
 import sys as _sys
+import os as _os
 import io as _io
 import json as _json
 import tracemalloc as _tracemalloc
 import runpy as _runpy
+
+# Append the _repo subdirectory (and its Python-containing children) to
+# sys.path so the benchmark can import local project modules.  Using
+# append (not insert) ensures standard-library modules are never shadowed
+# by repo files with colliding names (e.g. token.py, io.py).
+_repo_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "_repo")
+if _os.path.isdir(_repo_dir):
+    _sys.path.append(_repo_dir)
+    for _root, _dirs, _files in _os.walk(_repo_dir):
+        if any(_f.endswith(".py") for _f in _files):
+            if _root not in _sys.path:
+                _sys.path.append(_root)
 
 _tracemalloc.start()
 _orig_stdout = _sys.stdout
@@ -213,8 +226,9 @@ def _extract_local_module_names(repo_files: dict[str, str]) -> set[str]:
 def _write_repo_files(workdir: str, repo_files: dict[str, str]) -> None:
     """Write repo file contents into the working directory.
 
-    Also ensures every sub-directory that contains Python files has an
-    ``__init__.py`` so it is treated as a package and sibling imports work.
+    Also ensures every sub-directory (and intermediate parent) that contains
+    Python files has an ``__init__.py`` so it is treated as a package and
+    both absolute and relative imports of nested modules resolve correctly.
     """
     import os
 
@@ -224,14 +238,16 @@ def _write_repo_files(workdir: str, repo_files: dict[str, str]) -> None:
         with open(full, "w") as f:
             f.write(content)
 
-    # Ensure __init__.py exists in every directory that contains .py files
-    # so that Python treats them as packages (required for relative imports).
+    # Ensure __init__.py exists in every directory (and intermediate parent)
+    # that contains .py files so that Python treats them as packages
+    # (required for relative and absolute imports of nested modules).
     py_dirs: set[str] = set()
     for path in repo_files:
         if path.endswith(".py"):
             parent = os.path.dirname(os.path.join(workdir, path))
-            if parent and parent != workdir:
+            while parent and parent != workdir and len(parent) > len(workdir):
                 py_dirs.add(parent)
+                parent = os.path.dirname(parent)
     for d in py_dirs:
         init_path = os.path.join(d, "__init__.py")
         if not os.path.exists(init_path):
@@ -246,10 +262,16 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     import os
 
     workdir = tempfile.mkdtemp()
-    _write_repo_files(workdir, repo_files)
+
+    # Write repo files into a _repo subdirectory so they can never shadow
+    # standard-library modules (e.g. a repo's token.py shadowing stdlib
+    # tokenize -> token).  The memory wrapper appends _repo/ to sys.path
+    # AFTER stdlib, keeping the namespace clean.
+    repo_dir = os.path.join(workdir, "_repo")
+    _write_repo_files(repo_dir, repo_files)
 
     # Install repo dependencies if requirements.txt exists
-    req_txt = os.path.join(workdir, "requirements.txt")
+    req_txt = os.path.join(repo_dir, "requirements.txt")
     if os.path.exists(req_txt):
         subprocess.run(
             ["pip", "install", "-q", "-r", req_txt],
@@ -269,22 +291,13 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     with open(os.path.join(workdir, "_benchmark.py"), "w") as f:
         f.write(PYTHON_MEMORY_WRAPPER)
 
-    # Explicitly set PYTHONPATH to the workdir *and* every sub-directory that
-    # contains Python files so that sibling imports resolve correctly.
-    # e.g. advanced_demo/server.py can ``import database`` when database.py
-    # sits next to it in advanced_demo/.
+    # No PYTHONPATH manipulation needed — the memory wrapper appends _repo/
+    # to sys.path at runtime (after stdlib) to avoid shadowing.
     env = os.environ.copy()
-    py_dirs: set[str] = {workdir}
-    for path in repo_files:
-        if path.endswith(".py"):
-            parent = os.path.dirname(os.path.join(workdir, path))
-            if parent and parent != workdir:
-                py_dirs.add(parent)
-    env["PYTHONPATH"] = os.pathsep.join(sorted(py_dirs)) + os.pathsep + env.get("PYTHONPATH", "")
 
     local_modules = _extract_local_module_names(repo_files)
 
-    for attempt in range(3):
+    for attempt in range(2):
         result = subprocess.run(
             ["python", os.path.join(workdir, "_benchmark.py")],
             capture_output=True,
@@ -372,13 +385,28 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
             else:
                 local_js_modules.add(parts[0])
 
-    for attempt in range(3):
+    # Set NODE_PATH to include the workdir and all subdirectories containing
+    # JS/TS files so that local require() calls resolve correctly (mirrors
+    # the PYTHONPATH setup in _run_python_benchmark).
+    env = os.environ.copy()
+    js_dirs: set[str] = {workdir}
+    for path in repo_files:
+        if path.endswith((".js", ".ts", ".jsx", ".tsx")):
+            parent = os.path.dirname(os.path.join(workdir, path))
+            while parent and parent != workdir and len(parent) > len(workdir):
+                js_dirs.add(parent)
+                parent = os.path.dirname(parent)
+    # Prepend workdir paths to the existing NODE_PATH (which includes global modules)
+    env["NODE_PATH"] = os.pathsep.join(sorted(js_dirs)) + os.pathsep + env.get("NODE_PATH", "")
+
+    for attempt in range(2):
         result = subprocess.run(
             ["node", os.path.join(workdir, "_benchmark.js")],
             capture_output=True,
             text=True,
             timeout=BENCHMARK_TIMEOUT,
             cwd=workdir,
+            env=env,
         )
         if result.returncode != 0 and "Cannot find module" in result.stderr:
             m = re.search(r"Cannot find module '([^']+)'", result.stderr)
