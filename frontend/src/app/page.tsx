@@ -86,8 +86,6 @@ export default function LandingPage() {
                     <div className="flex items-center gap-6 text-light/30">
                       <span className="font-mono text-sm hover:text-light/60 transition-colors cursor-default">Python</span>
                       <span className="font-mono text-sm hover:text-light/60 transition-colors cursor-default">TypeScript</span>
-                      <span className="font-mono text-sm hover:text-light/60 transition-colors cursor-default">Rust</span>
-                      <span className="font-mono text-sm hover:text-light/60 transition-colors cursor-default">Go</span>
                     </div>
                   </div>
                 </div>
