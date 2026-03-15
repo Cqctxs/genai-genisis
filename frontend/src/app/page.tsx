@@ -24,7 +24,7 @@ export default function LandingPage() {
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
           <a
             href="/"
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity text-3xl"
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity text-4xl"
           >
             <div className="h-8 w-8 bg-linear-to-b from-light via-light/80 to-light/40" style={{ maskImage: 'url(/images/benchy_light.svg)', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center', WebkitMaskImage: 'url(/images/benchy_light.svg)', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center' }} />
             <span className="font-serif font-bold bg-linear-to-b from-light via-light/80 to-light/40 bg-clip-text text-transparent">Benchy</span>
@@ -61,9 +61,11 @@ export default function LandingPage() {
             <div className="relative min-h-[calc(100vh-8rem)] flex items-center justify-center px-6 sm:px-10 py-12 pb-32">
               <div className="max-w-2xl text-center space-y-12">
                 <div className="space-y-8">
-                  <h1 className="font-serif font-bold sm:text-8xl text-7xl leading-[1.1] tracking-tight pb-2 bg-linear-to-b from-light via-light/80 to-light/40 bg-clip-text text-transparent">
-                    Benchy
-                  </h1>
+                  <div>
+                    <h1 className="font-serif font-bold sm:text-8xl text-7xl leading-[1.1] tracking-tight pb-2 bg-linear-to-b from-light via-light/80 to-light/40 bg-clip-text text-transparent">
+                      Benchy
+                    </h1>
+                  </div>
                   <p className="text-light/50 text-sm sm:text-base max-w-md mx-auto leading-relaxed">
                     AI-powered performance analysis and optimization for your
                     codebase.
