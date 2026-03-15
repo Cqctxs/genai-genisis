@@ -207,7 +207,7 @@ async def _optimize_file(
     from agent.nodes.reviewer import review_optimization
 
     file_results = [
-        {k: v for k, v in r.items() if k not in ("raw_output", "script_content")}
+        {k: v for k, v in r.items() if k != "raw_output"}
         for r in benchmark_results
         if r.get("file") == file_path
     ]
@@ -278,6 +278,17 @@ Rules:
 {bias_instruction if bias_instruction else BIAS_INSTRUCTIONS["balanced"]}
 
 Optimize the bottleneck functions in this file."""
+
+    log.info(
+        "optimize_prompt_debug",
+        file=file_path,
+        prompt_chars=len(prompt),
+        hotspot_info_chars=len(json.dumps(hotspot_info, indent=2)),
+        file_results_chars=len(file_results_json),
+        correctness_section_chars=len(correctness_section),
+        regression_section_chars=len(regression_section),
+        file_content_chars=len(file_content[:8000]),
+    )
 
     MAX_PROMPT_CHARS = 50_000
     if len(prompt) > MAX_PROMPT_CHARS:
