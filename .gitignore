@@ -57,3 +57,5 @@ temp/
 plan.md
 
 .railtracks/
+
+*.jsonl
