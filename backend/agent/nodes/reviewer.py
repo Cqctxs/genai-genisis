@@ -31,8 +31,7 @@ For each change, provide:
 - `approved`: whether the change is safe, performant, and functionally identical to the original
 - `reason`: a short explanation of why you approved or rejected it
 - `suggestion`: if rejected, what the optimizer should do differently
-
-Be strictly conservative. It is always better to reject a questionable optimization than to let a bug or altered behavior through."""
+"""
 
 
 class ChangeReview(BaseModel):
