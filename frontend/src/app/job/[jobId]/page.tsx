@@ -13,7 +13,9 @@ import { PullRequestView } from "@/components/comparison-view";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getResults, type JobResult } from "@/lib/api";
-import { Loader2 } from "lucide-react";import { GlobalFooterPill } from "@/components/global-footer-pill";
+import { Loader2 } from "lucide-react";
+import { GlobalFooterPill } from "@/components/global-footer-pill";
+import { MarkdownContent } from "@/components/markdown-content";
 export default function JobResultsPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const { data: session, status } = useSession();
@@ -151,7 +153,7 @@ export default function JobResultsPage() {
                             <div className="space-y-1">
                               <p className="text-xs text-light/50">What this benchmark tests:</p>
                               <p className="text-sm text-light/80 border-l-2 border-light/20 pl-3 py-1">
-                                {detail.summary}
+                                <MarkdownContent>{detail.summary}</MarkdownContent>
                               </p>
                             </div>
                           )}

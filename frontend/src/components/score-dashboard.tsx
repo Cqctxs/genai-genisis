@@ -13,6 +13,7 @@ import {
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ComparisonReport } from "@/lib/api";
+import { MarkdownContent } from "@/components/markdown-content";
 
 interface ScoreDashboardProps {
   comparison: ComparisonReport;
@@ -329,7 +330,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
 
       <Card className="bg-light/5">
         <CardContent className="py-4">
-          <p className="text-sm text-light/70">{summary}</p>
+          <p className="text-sm text-light/70"><MarkdownContent>{summary}</MarkdownContent></p>
         </CardContent>
       </Card>
 

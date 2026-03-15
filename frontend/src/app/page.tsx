@@ -31,12 +31,6 @@ export default function LandingPage() {
             <span className="font-serif font-bold pl-1 pb-1 translate-y-1 bg-linear-to-b from-light via-light/90 to-light/50 bg-clip-text text-transparent">Benchy</span>
           </a>
           <div className="flex items-center gap-6">
-            <a
-              href="/debug"
-              className="text-xs font-mono text-light/40 hover:text-light/70 transition-colors"
-            >
-              /debug
-            </a>
             <button
               onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
               disabled={status === "loading"}

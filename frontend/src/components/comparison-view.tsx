@@ -10,6 +10,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { ComparisonReport } from "@/lib/api";
+import { MarkdownContent } from "@/components/markdown-content";
 
 interface PullRequestViewProps {
   prUrl: string;
@@ -213,7 +214,7 @@ export function PullRequestView({
               )}
 
               {comparison.summary && (
-                <p className="text-light/50">{comparison.summary}</p>
+                <p className="text-light/50"><MarkdownContent>{comparison.summary}</MarkdownContent></p>
               )}
             </div>
           </CardContent>

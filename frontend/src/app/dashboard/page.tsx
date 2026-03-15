@@ -144,12 +144,6 @@ export default function DashboardPage() {
             <span className="text-xs font-mono text-light/40">
               {session?.user?.name}
             </span>
-            <a
-              href="/debug"
-              className="text-xs font-mono text-light/40 hover:text-light/70 transition-colors"
-            >
-              /debug
-            </a>
             <button
               onClick={() => signOut({ callbackUrl: "/" })}
               className="text-xs font-mono text-light/60 hover:text-light transition-colors"
