@@ -1,13 +1,13 @@
 """Deterministic CodeMark scoring algorithm.
 
 Replaces the previous LLM-based scoring with a formula that correctly evaluates
-algorithmic improvements, handles benchmark noise floors, and recognizes
+API network optimizations, handles benchmark noise floors, and recognizes
 time-space tradeoffs (e.g. hash-map optimization: O(n²)→O(n) with more memory).
 
 Score anatomy (0–20 000):
   time_score       0–8 000  (40 % weight)
   memory_score     0–6 000  (30 % weight)
-  complexity_score 0–6 000  (30 % weight)
+  api_score        0–6 000  (30 % weight)
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ ALGO_CATEGORY_SCORES: dict[str, int] = {
 
 TIME_BASE = 3200
 MEMORY_BASE = 2400
-COMPLEXITY_BASE_START = 3000
+API_BASE_START = 3000
 
 
 # ---------------------------------------------------------------------------
@@ -62,9 +62,7 @@ COMPLEXITY_BASE_START = 3000
 # ---------------------------------------------------------------------------
 
 
-def _match_results(
-    initial: list[dict], final: list[dict]
-) -> list[tuple[dict, dict]]:
+def _match_results(initial: list[dict], final: list[dict]) -> list[tuple[dict, dict]]:
     """Pair initial/final results by (function_name, file)."""
     final_by_fn: dict[tuple[str, str], dict] = {}
     for r in final:
@@ -156,13 +154,13 @@ def compute_benchy_score(
     matched = _match_results(initial_results, final_results)
 
     # ------------------------------------------------------------------
-    # 1. Baseline complexity score (penalised by detected hotspots)
+    # 1. Baseline API score (penalised by detected hotspots)
     # ------------------------------------------------------------------
-    complexity_base = COMPLEXITY_BASE_START
+    api_base = API_BASE_START
     for hs in hotspots:
         sev = hs.get("severity", "medium").lower()
-        complexity_base -= SEVERITY_DEDUCTION.get(sev, 200)
-    complexity_base = max(500, min(complexity_base, COMPLEXITY_BASE_START))
+        api_base -= SEVERITY_DEDUCTION.get(sev, 200)
+    api_base = max(500, min(api_base, API_BASE_START))
 
     # ------------------------------------------------------------------
     # 2. Per-function metrics
@@ -241,13 +239,13 @@ def compute_benchy_score(
     memory_score = max(0, min(MEMORY_BASE + mem_delta, 6000))
 
     # ------------------------------------------------------------------
-    # 5. Complexity score (biggest lever for algorithmic improvements)
+    # 5. API Optimization score (biggest lever for genuine benchmark improvements)
     # ------------------------------------------------------------------
-    # Map function name → speedup so complexity reward can be gated on
-    # whether benchmarks actually improved (or at least didn't regress).
+    # Map function name → speedup so API reward can be gated on
+    # whether benchmarks actually improved significantly.
     speedup_by_fn = {c.function_name: c.speedup_factor for c in comparisons}
     optimised_fns = {c.function_name for c in comparisons}
-    complexity_delta = 0.0
+    api_delta = 0.0
 
     for hs in hotspots:
         fn = hs.get("function_name", "")
@@ -259,27 +257,24 @@ def compute_benchy_score(
         raw_pts = cat_pts * sev_mult
 
         # Scale the reward by actual benchmark outcome.
-        # speedup >= 1.0  → full credit
-        # speedup in [0.9, 1.0) → partial credit (noise / neutral)
-        # speedup < 0.9  → no complexity credit (clear regression)
+        # speedup > 1.05  → scales up
+        # speedup <= 1.05 → 0  (Requires real actual data improvement)
         fn_speedup = speedup_by_fn.get(fn, 1.0)
-        if fn_speedup >= 1.0:
-            scale = 1.0
-        elif fn_speedup >= 0.9:
-            scale = (fn_speedup - 0.9) / 0.1  # linear 0→1 over [0.9, 1.0]
+        if fn_speedup > 1.05:
+            scale = min((fn_speedup - 1.05) * 5.0, 1.0)
         else:
             scale = 0.0
 
-        complexity_delta += raw_pts * scale
+        api_delta += raw_pts * scale
 
-    complexity_delta = min(complexity_delta, 3000)
-    complexity_score = max(0, min(complexity_base + complexity_delta, 6000))
+    api_delta = min(api_delta, 3000)
+    api_score = max(0, min(api_base + api_delta, 6000))
 
     # ------------------------------------------------------------------
     # 6. Overall before / after
     # ------------------------------------------------------------------
-    overall_before = TIME_BASE + MEMORY_BASE + complexity_base
-    overall_after = time_score + memory_score + complexity_score
+    overall_before = TIME_BASE + MEMORY_BASE + api_base
+    overall_after = time_score + memory_score + api_score
     overall_after = max(1000, min(overall_after, 20000))
 
     log.info(
@@ -288,11 +283,18 @@ def compute_benchy_score(
         overall_after=round(overall_after, 1),
         time_score=round(time_score, 1),
         memory_score=round(memory_score, 1),
-        complexity_score=round(complexity_score, 1),
+        api_score=round(api_score, 1),
         time_delta=round(time_delta, 1),
         mem_delta=round(mem_delta, 1),
-        complexity_delta=round(complexity_delta, 1),
-        geo_mean_speedup=round(math.exp(sum(math.log(max(s, 0.01)) for s in speedups) / len(speedups)), 2) if speedups else 1.0,
+        api_delta=round(api_delta, 1),
+        geo_mean_speedup=(
+            round(
+                math.exp(sum(math.log(max(s, 0.01)) for s in speedups) / len(speedups)),
+                2,
+            )
+            if speedups
+            else 1.0
+        ),
         time_space_tradeoffs=time_space_tradeoff_count,
         functions_matched=len(comparisons),
     )
@@ -301,7 +303,11 @@ def compute_benchy_score(
     # 7. Radar data (normalised 0–100)
     # ------------------------------------------------------------------
     radar = _build_radar(
-        comparisons, hotspots, time_delta, mem_delta, complexity_delta,
+        comparisons,
+        hotspots,
+        time_delta,
+        mem_delta,
+        api_delta,
     )
 
     score = CodeMarkScore(
@@ -311,8 +317,8 @@ def compute_benchy_score(
         time_score_before=float(TIME_BASE),
         memory_score=round(memory_score, 1),
         memory_score_before=float(MEMORY_BASE),
-        complexity_score=round(complexity_score, 1),
-        complexity_score_before=round(complexity_base, 1),
+        api_score=round(api_score, 1),
+        api_score_before=round(api_base, 1),
         radar_data=radar,
     )
     return score, comparisons
@@ -322,12 +328,13 @@ def compute_benchy_score(
 # Radar chart builder
 # ---------------------------------------------------------------------------
 
+
 def _build_radar(
     comparisons: list[FunctionComparison],
     hotspots: list[dict],
     time_delta: float,
     mem_delta: float,
-    complexity_delta: float,
+    api_delta: float,
 ) -> list[RadarAxis]:
     """Build radar axes normalised to 0–100. 50 is the neutral baseline."""
 
@@ -336,7 +343,8 @@ def _build_radar(
 
     avg_speedup = (
         sum(c.speedup_factor for c in comparisons) / len(comparisons)
-        if comparisons else 1.0
+        if comparisons
+        else 1.0
     )
 
     io_before = 50.0
@@ -351,23 +359,43 @@ def _build_radar(
     concurrency_before = 50.0
     conc_cats = {"blocking i/o", "blocking io", "synchronous"}
     conc_boost = sum(
-        10 for hs in hotspots
+        10
+        for hs in hotspots
         if any(p in hs.get("category", "").lower() for p in conc_cats)
     )
     concurrency_after = _clamp(50 + conc_boost)
 
-    quality_before = 50.0
+    api_before = 50.0
     addressed = sum(
-        1 for hs in hotspots
+        1
+        for hs in hotspots
         if hs.get("function_name", "") in {c.function_name for c in comparisons}
     )
     total = max(len(hotspots), 1)
-    quality_after = _clamp(50 + (addressed / total) * 40 + complexity_delta / 100)
+    api_after = _clamp(50 + (addressed / total) * 10 + api_delta / 100)
 
     return [
-        RadarAxis(axis="I/O Speed", before=round(io_before, 1), after=round(io_after, 1)),
-        RadarAxis(axis="CPU Efficiency", before=round(cpu_before, 1), after=round(cpu_after, 1)),
-        RadarAxis(axis="Memory Footprint", before=round(mem_before, 1), after=round(mem_after, 1)),
-        RadarAxis(axis="Concurrency", before=round(concurrency_before, 1), after=round(concurrency_after, 1)),
-        RadarAxis(axis="Code Quality", before=round(quality_before, 1), after=round(quality_after, 1)),
+        RadarAxis(
+            axis="I/O Speed", before=round(io_before, 1), after=round(io_after, 1)
+        ),
+        RadarAxis(
+            axis="CPU Efficiency",
+            before=round(cpu_before, 1),
+            after=round(cpu_after, 1),
+        ),
+        RadarAxis(
+            axis="Memory Footprint",
+            before=round(mem_before, 1),
+            after=round(mem_after, 1),
+        ),
+        RadarAxis(
+            axis="Concurrency",
+            before=round(concurrency_before, 1),
+            after=round(concurrency_after, 1),
+        ),
+        RadarAxis(
+            axis="API Efficiency",
+            before=round(api_before, 1),
+            after=round(api_after, 1),
+        ),
     ]

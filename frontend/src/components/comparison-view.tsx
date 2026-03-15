@@ -1,6 +1,12 @@
 "use client";
 
-import { ExternalLink, GitPullRequest, FileCode, AlertCircle, ShieldAlert } from "lucide-react";
+import {
+  ExternalLink,
+  GitPullRequest,
+  FileCode,
+  AlertCircle,
+  ShieldAlert,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { ComparisonReport } from "@/lib/api";
@@ -35,7 +41,8 @@ export function PullRequestView({
   }
 
   if (!prUrl) {
-    const isPermissionError = prStatus === "permission_denied" || prStatus === "repo_not_found";
+    const isPermissionError =
+      prStatus === "permission_denied" || prStatus === "repo_not_found";
     return (
       <Card className="bg-light/5">
         <CardContent className="py-12 text-center text-light/40">
@@ -48,7 +55,8 @@ export function PullRequestView({
                   : "Repository not found"}
               </p>
               <p className="text-sm text-neutral-400">
-                {prError || "Could not create pull request. Check your GitHub token permissions."}
+                {prError ||
+                  "Could not create pull request. Check your GitHub token permissions."}
               </p>
               <p className="text-xs text-neutral-600 mt-3">
                 The optimized code is still available in the results.
@@ -58,7 +66,8 @@ export function PullRequestView({
             <>
               <AlertCircle className="mx-auto mb-3 h-8 w-8 text-accent-orange/70" />
               <p className="text-sm">
-                {prError || "PR creation was skipped or failed. The optimized code is still available in the results."}
+                {prError ||
+                  "PR creation was skipped or failed. The optimized code is still available in the results."}
               </p>
             </>
           )}
@@ -101,9 +110,21 @@ export function PullRequestView({
 
           {score && (
             <div className="grid grid-cols-3 gap-3">
-              <ScoreChip label="Time" value={score.time_score} color="text-accent-blue" />
-              <ScoreChip label="Memory" value={score.memory_score} color="text-accent-purple" />
-              <ScoreChip label="Complexity" value={score.complexity_score} color="text-accent-orange" />
+              <ScoreChip
+                label="Time"
+                value={score.time_score}
+                color="text-accent-blue"
+              />
+              <ScoreChip
+                label="Memory"
+                value={score.memory_score}
+                color="text-accent-purple"
+              />
+              <ScoreChip
+                label="API Efficiency"
+                value={score.api_score}
+                color="text-accent-orange"
+              />
             </div>
           )}
         </CardContent>
@@ -111,9 +132,7 @@ export function PullRequestView({
 
       <Card className="bg-light/5">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm text-light/50">
-            Changed Files
-          </CardTitle>
+          <CardTitle className="text-sm text-light/50">Changed Files</CardTitle>
         </CardHeader>
         <CardContent>
           <ul className="space-y-1">
@@ -123,9 +142,7 @@ export function PullRequestView({
                 className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-light/5"
               >
                 <FileCode className="h-4 w-4 shrink-0 text-accent-blue" />
-                <span className="truncate font-mono text-light/70">
-                  {file}
-                </span>
+                <span className="truncate font-mono text-light/70">{file}</span>
               </li>
             ))}
           </ul>
@@ -164,9 +181,7 @@ export function PullRequestView({
                         <th className="pb-2 pr-4 font-medium text-right">
                           After
                         </th>
-                        <th className="pb-2 font-medium text-right">
-                          Speedup
-                        </th>
+                        <th className="pb-2 font-medium text-right">Speedup</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -208,7 +223,15 @@ export function PullRequestView({
   );
 }
 
-function ScoreChip({ label, value, color }: { label: string; value: number; color: string }) {
+function ScoreChip({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
   return (
     <div className="rounded-lg bg-light/10 px-3 py-2 text-center">
       <p className="text-xs text-light/40">{label}</p>

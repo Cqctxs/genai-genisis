@@ -79,7 +79,8 @@ CRITICAL REQUIREMENTS:
 - The optimized functionality MUST MATCH EXACTLY the original functionality. Ensure edge cases, return types, and exceptions remain identical.
 - Adapt your optimization strategy based on the program's context:
   - For single-input / compute-bound programs: Focus purely on algorithmic efficiency, memory allocation, reducing unnecessary operations, and data structures. Do not attempt I/O concurrency or batching optimizations where they do not naturally apply.
-  - For I/O bound programs (DB, network): Focus on async/concurrent I/O, connection pooling, and batching.
+    - For I/O bound programs (DB, network): Focus on async/concurrent I/O, connection pooling, batching, and eliminating redundant external calls.
+    - For API usage: Batch API requests, aggressively cache external responses, and minimize cross-network boundaries wherever possible.
   - For large datasets or iteration: Use generators, lazy evaluation, stream processing, or vectorized operations (e.g. NumPy if available) to minimize memory footprint and execution time.
   - For repeated heavy calls/computations: Add caching/memoization appropriately.
 

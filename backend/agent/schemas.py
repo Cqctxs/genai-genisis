@@ -78,6 +78,7 @@ def slim_ast_for_prompt(ast_map: dict) -> dict:
     Prevents JSON-escaped quotes in docstrings and decorator strings from
     contaminating LLM-generated code (e.g. benchmark scripts).
     """
+
     def _slim_func(f: dict) -> dict:
         return {k: v for k, v in f.items() if k not in _VERBOSE_FUNCTION_FIELDS}
 
@@ -112,14 +113,18 @@ class TriageChunk(BaseModel):
     label: str = Field(description="Human-readable chunk name, e.g. 'Database Layer'")
     files: list[str] = Field(description="List of relative file paths in this chunk")
     priority: int = Field(description="1 = highest priority, higher = lower priority")
-    reasoning: str = Field(description="Why these files are grouped and why this priority")
+    reasoning: str = Field(
+        description="Why these files are grouped and why this priority"
+    )
 
 
 class TriageResult(BaseModel):
     language: str = Field(description="python or javascript/typescript")
     chunks: list[TriageChunk]
     total_files_scanned: int
-    summary: str = Field(description="High-level overview of codebase structure and likely bottleneck areas")
+    summary: str = Field(
+        description="High-level overview of codebase structure and likely bottleneck areas"
+    )
 
 
 class BenchmarkScript(BaseModel):
@@ -211,8 +216,8 @@ class CodeMarkScore(BaseModel):
     time_score_before: float
     memory_score: float
     memory_score_before: float
-    complexity_score: float
-    complexity_score_before: float
+    api_score: float
+    api_score_before: float
     radar_data: list[RadarAxis]
 
 
@@ -236,6 +241,7 @@ class ComparisonReport(BaseModel):
 
 class BenchmarkDetail(BaseModel):
     """A single benchmark with its script, before/after results, and summary."""
+
     function_name: str
     file: str
     language: str

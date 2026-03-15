@@ -17,7 +17,7 @@ export interface GitHubRepo {
 
 export async function listRepos(githubToken: string): Promise<GitHubRepo[]> {
   const res = await fetch(
-    `${API_URL}/api/repos?github_token=${encodeURIComponent(githubToken)}`
+    `${API_URL}/api/repos?github_token=${encodeURIComponent(githubToken)}`,
   );
 
   if (!res.ok) {
@@ -78,8 +78,8 @@ export interface BenchyScore {
   time_score_before: number;
   memory_score: number;
   memory_score_before: number;
-  complexity_score: number;
-  complexity_score_before: number;
+  api_score: number;
+  api_score_before: number;
   radar_data: RadarAxis[];
 }
 
@@ -130,7 +130,7 @@ export interface JobResult {
 export async function startAnalysis(
   repoUrl: string,
   githubToken: string,
-  optimizationBias: string = "balanced"
+  optimizationBias: string = "balanced",
 ): Promise<AnalyzeResponse> {
   const res = await fetch(`${API_URL}/api/analyze`, {
     method: "POST",
@@ -154,7 +154,7 @@ export function streamJob(
   jobId: string,
   onEvent: (event: { event: string; data: any }) => void,
   onError: (error: Error) => void,
-  onComplete: () => void
+  onComplete: () => void,
 ): () => void {
   const eventSource = new EventSource(`${API_URL}/api/stream/${jobId}`);
 

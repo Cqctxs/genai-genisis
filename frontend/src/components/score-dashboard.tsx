@@ -18,7 +18,13 @@ interface ScoreDashboardProps {
   comparison: ComparisonReport;
 }
 
-function AnimatedScore({ target, duration = 2 }: { target: number; duration?: number }) {
+function AnimatedScore({
+  target,
+  duration = 2,
+}: {
+  target: number;
+  duration?: number;
+}) {
   const [value, setValue] = useState(0);
 
   useEffect(() => {
@@ -59,8 +65,12 @@ function SubScoreBar({
       <div className="flex items-center justify-between text-xs">
         <span className="text-light/60">{label}</span>
         <span className="text-light/40 tabular-nums">
-          <span className="text-light/25 line-through mr-1">{before.toLocaleString()}</span>
-          <span className={improved ? "text-accent-green" : "text-accent-red"}>{value.toLocaleString()}</span>
+          <span className="text-light/25 line-through mr-1">
+            {before.toLocaleString()}
+          </span>
+          <span className={improved ? "text-accent-green" : "text-accent-red"}>
+            {value.toLocaleString()}
+          </span>
           <span className="text-light/25"> · {weight}</span>
         </span>
       </div>
@@ -111,7 +121,11 @@ function MetricCard({
             {unit}
           </span>
         </div>
-        <p className={`text-xs font-medium ${isNegative ? "text-accent-red" : "text-accent-green"}`}>{improvement}</p>
+        <p
+          className={`text-xs font-medium ${isNegative ? "text-accent-red" : "text-accent-green"}`}
+        >
+          {improvement}
+        </p>
       </CardContent>
     </Card>
   );
@@ -134,7 +148,11 @@ function ScoreExplanation() {
           strokeWidth={2}
           stroke="currentColor"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M19.5 8.25l-7.5 7.5-7.5-7.5"
+          />
         </svg>
       </button>
       {open && (
@@ -145,23 +163,30 @@ function ScoreExplanation() {
           className="mt-3 text-left max-w-lg mx-auto space-y-2 text-[11px] text-light/40 leading-relaxed"
         >
           <p>
-            The <span className="text-light/60 font-medium">CodeMark Score</span> ranges
-            from <span className="text-light/60">0 to 20,000</span>. A typical unoptimized
-            project scores between 5,000 and 8,000. Higher is better.
+            The{" "}
+            <span className="text-light/60 font-medium">CodeMark Score</span>{" "}
+            ranges from <span className="text-light/60">0 to 20,000</span>. A
+            typical unoptimized project scores between 5,000 and 8,000. Higher
+            is better.
           </p>
           <p>The score is composed of three weighted sub-scores:</p>
           <ul className="list-none space-y-1 pl-0">
             <li>
-              <span className="text-accent-blue font-medium">Time (40%)</span> — Faster
-              function execution produces a higher score.
+              <span className="text-accent-blue font-medium">Time (40%)</span> —
+              Faster function execution produces a higher score.
             </li>
             <li>
-              <span className="text-accent-green font-medium">Memory (30%)</span> — Lower
-              peak memory usage produces a higher score.
+              <span className="text-accent-green font-medium">
+                Memory (30%)
+              </span>{" "}
+              — Lower peak memory usage produces a higher score.
             </li>
             <li>
-              <span className="text-accent-purple font-medium">Complexity (30%)</span> — Better
-              algorithmic complexity (e.g. O(n) vs O(n²)) produces a higher score.
+              <span className="text-accent-purple font-medium">
+                Complexity (30%)
+              </span>{" "}
+              — Better algorithmic complexity (e.g. O(n) vs O(n²)) produces a
+              higher score.
             </li>
           </ul>
           <p>
@@ -183,7 +208,8 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
   const totalNewMem = functions.reduce((acc, f) => acc + f.new_memory_mb, 0);
   const avgSpeedup =
     functions.length > 0
-      ? functions.reduce((acc, f) => acc + f.speedup_factor, 0) / functions.length
+      ? functions.reduce((acc, f) => acc + f.speedup_factor, 0) /
+        functions.length
       : 0;
 
   return (
@@ -196,7 +222,10 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
             </p>
             <div className="flex items-center justify-center gap-6">
               <div className="text-2xl text-light/40">
-                <AnimatedScore target={benchy_score.overall_before} duration={1} />
+                <AnimatedScore
+                  target={benchy_score.overall_before}
+                  duration={1}
+                />
               </div>
               <svg
                 className="w-6 h-6 text-light/20"
@@ -205,7 +234,11 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 strokeWidth={2}
                 stroke="currentColor"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
+                />
               </svg>
               <motion.div
                 initial={{ scale: 0.5, opacity: 0 }}
@@ -235,9 +268,9 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 color="var(--color-accent-green)"
               />
               <SubScoreBar
-                label="Complexity"
-                before={benchy_score.complexity_score_before}
-                value={benchy_score.complexity_score}
+                label="API Efficiency"
+                before={benchy_score.api_score_before}
+                value={benchy_score.api_score}
                 max={20000}
                 weight="30%"
                 color="var(--color-accent-purple)"
@@ -266,12 +299,20 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                   <PolarGrid stroke="var(--color-light)" strokeOpacity={0.1} />
                   <PolarAngleAxis
                     dataKey="axis"
-                    tick={{ fill: "var(--color-light)", fillOpacity: 0.5, fontSize: 11 }}
+                    tick={{
+                      fill: "var(--color-light)",
+                      fillOpacity: 0.5,
+                      fontSize: 11,
+                    }}
                   />
                   <PolarRadiusAxis
                     angle={30}
                     domain={[0, 100]}
-                    tick={{ fill: "var(--color-light)", fillOpacity: 0.25, fontSize: 9 }}
+                    tick={{
+                      fill: "var(--color-light)",
+                      fillOpacity: 0.25,
+                      fontSize: 9,
+                    }}
                   />
                   <Radar
                     name="Before"
@@ -288,7 +329,11 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                     fillOpacity={0.25}
                   />
                   <Legend
-                    wrapperStyle={{ fontSize: "11px", color: "var(--color-light)", opacity: 0.5 }}
+                    wrapperStyle={{
+                      fontSize: "11px",
+                      color: "var(--color-light)",
+                      opacity: 0.5,
+                    }}
                   />
                 </RadarChart>
               </ResponsiveContainer>
@@ -304,7 +349,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
             unit="ms"
             isNegative={totalNewTime > totalOldTime}
             improvement={(() => {
-              const pct = ((1 - totalNewTime / totalOldTime) * 100);
+              const pct = (1 - totalNewTime / totalOldTime) * 100;
               return pct >= 0
                 ? `${pct.toFixed(0)}% faster`
                 : `${Math.abs(pct).toFixed(0)}% slower`;
@@ -317,7 +362,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
             unit=" MB"
             isNegative={totalNewMem > totalOldMem}
             improvement={(() => {
-              const pct = ((1 - totalNewMem / totalOldMem) * 100);
+              const pct = (1 - totalNewMem / totalOldMem) * 100;
               return pct >= 0
                 ? `-${pct.toFixed(0)}% memory`
                 : `+${Math.abs(pct).toFixed(0)}% memory`;
@@ -329,9 +374,11 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
             after={avgSpeedup.toFixed(1)}
             unit="x"
             isNegative={avgSpeedup < 1}
-            improvement={avgSpeedup >= 1
-              ? `${avgSpeedup.toFixed(1)}x faster on average`
-              : `${(1 / avgSpeedup).toFixed(1)}x slower on average`}
+            improvement={
+              avgSpeedup >= 1
+                ? `${avgSpeedup.toFixed(1)}x faster on average`
+                : `${(1 / avgSpeedup).toFixed(1)}x slower on average`
+            }
           />
         </div>
       </div>
@@ -368,8 +415,12 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                       className="border-b border-light/5"
                     >
                       <td className="py-2 pr-4">
-                        <div className="font-mono text-xs">{f.function_name}</div>
-                        <div className="text-[10px] text-light/30">{f.file}</div>
+                        <div className="font-mono text-xs">
+                          {f.function_name}
+                        </div>
+                        <div className="text-[10px] text-light/30">
+                          {f.file}
+                        </div>
                       </td>
                       <td className="text-right py-2 px-3 text-light/40">
                         {f.old_time_ms.toFixed(1)}ms
@@ -377,12 +428,16 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                       <td className="text-right py-2 px-3 text-light">
                         {f.new_time_ms.toFixed(1)}ms
                       </td>
-                      <td className={`text-right py-2 px-3 font-medium ${f.speedup_factor >= 1 ? "text-accent-green" : "text-accent-red"}`}>
+                      <td
+                        className={`text-right py-2 px-3 font-medium ${f.speedup_factor >= 1 ? "text-accent-green" : "text-accent-red"}`}
+                      >
                         {f.speedup_factor >= 1
                           ? `${f.speedup_factor.toFixed(1)}x`
                           : `${(1 / f.speedup_factor).toFixed(1)}x slower`}
                       </td>
-                      <td className={`text-right py-2 pl-3 ${f.memory_reduction_pct >= 0 ? "text-accent-green" : "text-accent-red"}`}>
+                      <td
+                        className={`text-right py-2 pl-3 ${f.memory_reduction_pct >= 0 ? "text-accent-green" : "text-accent-red"}`}
+                      >
                         {f.memory_reduction_pct >= 0
                           ? `-${f.memory_reduction_pct.toFixed(0)}%`
                           : `+${Math.abs(f.memory_reduction_pct).toFixed(0)}%`}
@@ -407,11 +462,19 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 strokeWidth={1.5}
                 stroke="currentColor"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008zm-3 6h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008zm-3 6h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008z"
+                />
               </svg>
               <div className="space-y-1">
-                <p className="text-[11px] text-light/40 font-medium">Benchmark Environment</p>
-                <p className="text-[10px] text-light/25 leading-relaxed">{sandbox_specs}</p>
+                <p className="text-[11px] text-light/40 font-medium">
+                  Benchmark Environment
+                </p>
+                <p className="text-[10px] text-light/25 leading-relaxed">
+                  {sandbox_specs}
+                </p>
               </div>
             </div>
           </CardContent>

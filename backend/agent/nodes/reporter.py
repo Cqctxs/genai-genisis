@@ -4,7 +4,12 @@ import json
 import structlog
 from pydantic import BaseModel
 
-from agent.schemas import CodeMarkScore, ComparisonReport, FunctionComparison, BenchmarkDetail
+from agent.schemas import (
+    CodeMarkScore,
+    ComparisonReport,
+    FunctionComparison,
+    BenchmarkDetail,
+)
 from agent.state import AgentState
 from services.modal_service import get_sandbox_specs
 from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
@@ -40,13 +45,17 @@ async def report_node(state: AgentState) -> dict:
         "report_start",
         initial_results_count=len(initial_results),
         final_results_count=len(final_results),
-        initial_total_ms=round(sum(r.get("avg_time_ms", 0) for r in initial_results), 1),
+        initial_total_ms=round(
+            sum(r.get("avg_time_ms", 0) for r in initial_results), 1
+        ),
         final_total_ms=round(sum(r.get("avg_time_ms", 0) for r in final_results), 1),
         hotspots_count=len(hotspots),
     )
 
     score, function_comparisons = compute_benchy_score(
-        initial_results, final_results, hotspots,
+        initial_results,
+        final_results,
+        hotspots,
     )
 
     sandbox_specs = await get_sandbox_specs()
@@ -71,7 +80,7 @@ async def report_node(state: AgentState) -> dict:
         score_after=report.benchy_score.overall_after,
         time_score=report.benchy_score.time_score,
         memory_score=report.benchy_score.memory_score,
-        complexity_score=report.benchy_score.complexity_score,
+        api_score=report.benchy_score.api_score,
         functions_compared=len(report.functions),
         summary=report.summary[:200],
     )
@@ -82,14 +91,18 @@ async def report_node(state: AgentState) -> dict:
             "report_functions_summary",
             functions_compared=len(report.functions),
             best_speedup=f"{best.function_name} ({best.speedup_factor:.1f}x)",
-            avg_speedup=round(sum(f.speedup_factor for f in report.functions) / len(report.functions), 2),
+            avg_speedup=round(
+                sum(f.speedup_factor for f in report.functions) / len(report.functions),
+                2,
+            ),
         )
 
     return {
         **state,
         "comparison": report.model_dump(),
         "benchmark_details": benchmark_details,
-        "messages": state.get("messages", []) + [
+        "messages": state.get("messages", [])
+        + [
             f"CodeMark Score: {report.benchy_score.overall_before:.0f} -> {report.benchy_score.overall_after:.0f}"
         ],
     }
@@ -117,7 +130,7 @@ async def _generate_summary(
 
 ## Score
 Overall: {score.overall_before:.0f} → {score.overall_after:.0f}
-Time: {score.time_score:.0f} | Memory: {score.memory_score:.0f} | Complexity: {score.complexity_score:.0f}
+Time: {score.time_score:.0f} | Memory: {score.memory_score:.0f} | API: {score.api_score:.0f}
 
 Write a concise summary of the optimizations and their impact."""
 
@@ -145,18 +158,30 @@ def _fallback_summary(
         return "No benchmark comparisons available."
 
     improved = [c for c in comparisons if c.speedup_factor > 1.05]
-    tradeoffs = [c for c in comparisons if c.speedup_factor > 1.05 and c.memory_reduction_pct < -5]
+    tradeoffs = [
+        c
+        for c in comparisons
+        if c.speedup_factor > 1.05 and c.memory_reduction_pct < -5
+    ]
     fn_names = ", ".join(c.function_name for c in comparisons)
 
     parts = [f"Analysed {len(comparisons)} function(s): {fn_names}."]
     if improved:
         avg_speedup = sum(c.speedup_factor for c in improved) / len(improved)
-        parts.append(f"{len(improved)} showed measurable improvement (avg {avg_speedup:.1f}x speedup).")
+        parts.append(
+            f"{len(improved)} showed measurable improvement (avg {avg_speedup:.1f}x speedup)."
+        )
     else:
-        parts.append("Benchmark times were within noise margins on the sandbox's input sizes.")
+        parts.append(
+            "Benchmark times were within noise margins on the sandbox's input sizes."
+        )
     if tradeoffs:
-        parts.append(f"{len(tradeoffs)} used a time-space tradeoff (faster execution, higher memory).")
-    parts.append(f"Overall CodeMark score: {score.overall_before:.0f} → {score.overall_after:.0f}.")
+        parts.append(
+            f"{len(tradeoffs)} used a time-space tradeoff (faster execution, higher memory)."
+        )
+    parts.append(
+        f"Overall CodeMark score: {score.overall_before:.0f} → {score.overall_after:.0f}."
+    )
     return " ".join(parts)
 
 
@@ -170,8 +195,12 @@ async def _generate_benchmark_details(
     if not benchmark_code:
         return []
 
-    initial_by_fn = {(r.get("function_name", ""), r.get("file", "")): r for r in initial_results}
-    final_by_fn = {(r.get("function_name", ""), r.get("file", "")): r for r in final_results}
+    initial_by_fn = {
+        (r.get("function_name", ""), r.get("file", "")): r for r in initial_results
+    }
+    final_by_fn = {
+        (r.get("function_name", ""), r.get("file", "")): r for r in final_results
+    }
     comparison_by_fn = {c.function_name: c for c in comparisons}
 
     agent = get_agent(SummaryText, BENCHMARK_DETAIL_PROMPT, GEMINI_FLASH)
@@ -200,13 +229,17 @@ async def _generate_benchmark_details(
                 f"Summarize what this benchmark tests."
             )
             result = await asyncio.wait_for(
-                run_agent_logged(agent, summary_prompt, node_name=f"benchmark_detail_{fn_name}"),
+                run_agent_logged(
+                    agent, summary_prompt, node_name=f"benchmark_detail_{fn_name}"
+                ),
                 timeout=10,
             )
             summary_output: SummaryText = result.output  # type: ignore[assignment]
             summary = summary_output.summary
         except Exception as e:
-            log.warning("benchmark_detail_summary_failed", function=fn_name, error=str(e))
+            log.warning(
+                "benchmark_detail_summary_failed", function=fn_name, error=str(e)
+            )
             summary = f"Benchmark for {fn_name}"
 
         return BenchmarkDetail(
