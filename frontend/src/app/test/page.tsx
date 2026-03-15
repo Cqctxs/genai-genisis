@@ -132,6 +132,8 @@ type Phase =
 /*  Main page component                                                */
 /* ------------------------------------------------------------------ */
 
+type ViewState = "repo-select" | "graph-config" | "analyzing";
+
 export default function TestPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -154,6 +156,8 @@ export default function TestPage() {
 
   // Execution state
   const [phase, setPhase] = useState<Phase>("idle");
+  const [currentView, setCurrentView] = useState<ViewState>("repo-select");
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [currentMessage, setCurrentMessage] = useState("");
   // panelCollapsed is true when analysis is running
   const [panelCollapsed, setPanelCollapsed] = useState(false);
@@ -196,21 +200,52 @@ export default function TestPage() {
 
   // Build graph nodes/edges with phase-based styling
 
+  const handleNodeClick = useCallback((id: string) => {
+    if (currentView !== "graph-config") return;
+    setSelectedNodeIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  }, [currentView]);
 
+  const handleGenerateFlowchart = useCallback((targetUrl: string) => {
+    // Mock parsing step transition
+    setCurrentView("graph-config");
+    setSelectedNodeIds(FAKE_GRAPH_DATA.nodes.map(n => n.id));
+    setPanelCollapsed(false);
+  }, []);
 
+  const handleBrowseAnalyze = () => {
+    if (!selectedRepo) return;
+    handleGenerateFlowchart(selectedRepo.html_url);
+  };
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = url.trim().replace(/\/+$/, "");
+    if (!GITHUB_URL_REGEX.test(trimmed)) {
+      setUrlError("Please enter a valid GitHub repository URL");
+      return;
+    }
+    setUrlError("");
+    handleGenerateFlowchart(trimmed);
+  };
 
   // Analyze handler
-  const handleAnalyze = useCallback(
-    async (repoUrl: string) => {
+  const handleStartOptimization = useCallback(
+    async () => {
       if (!accessToken) return;
+      
+      const targetUrl = repoMode === "url" ? url.trim() : selectedRepo?.html_url;
+      if (!targetUrl) return;
 
       setPhase("analyzing");
+      setCurrentView("analyzing");
       setCurrentMessage("Starting analysis...");
       setPanelCollapsed(true);
 
       try {
         const { job_id } = await startAnalysis(
-          repoUrl,
+          targetUrl,
           accessToken,
           optimizationBias,
           analysisMode === "fast",
@@ -253,24 +288,8 @@ export default function TestPage() {
         setCurrentMessage(err.message || "Failed to start analysis");
       }
     },
-    [accessToken, optimizationBias, analysisMode, router],
+    [accessToken, optimizationBias, analysisMode, router, repoMode, url, selectedRepo],
   );
-
-  const handleBrowseAnalyze = () => {
-    if (!selectedRepo) return;
-    handleAnalyze(selectedRepo.html_url);
-  };
-
-  const handleUrlSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = url.trim().replace(/\/+$/, "");
-    if (!GITHUB_URL_REGEX.test(trimmed)) {
-      setUrlError("Please enter a valid GitHub repository URL");
-      return;
-    }
-    setUrlError("");
-    handleAnalyze(trimmed);
-  };
 
   const handleReset = () => {
     setPhase("idle");
@@ -323,15 +342,24 @@ export default function TestPage() {
         </nav>
 
         {/* Background flowchart layer */}
-        <div className="absolute inset-0 z-0 pointer-events-auto" style={{ top: "57px" }}>
-          <PerformanceGraph graphData={FAKE_GRAPH_DATA} variant="fullscreen" />
+        <div className={`absolute inset-0 z-0 transition-opacity duration-700 pointer-events-auto ${
+          currentView === 'repo-select' ? 'opacity-15 blur-sm' : 'opacity-100'
+        }`} style={{ top: "57px" }}>
+          <PerformanceGraph 
+            graphData={FAKE_GRAPH_DATA} 
+            variant="fullscreen" 
+            selectedNodeIds={selectedNodeIds}
+            onNodeClick={handleNodeClick}
+          />
         </div>
 
         {/* Foreground content */}
-        <div className="flex-1 min-h-0 flex items-center justify-end z-10 px-6 py-8 pointer-events-none relative">
+        <div className={`flex-1 min-h-0 flex items-center z-10 px-6 py-8 pointer-events-none relative transition-all duration-700 ${
+          currentView === "repo-select" ? "justify-center" : "justify-end"
+        }`}>
           
           {/* User Expand/Collapse Toggle Button */}
-          {!panelCollapsed && (
+          {currentView !== "repo-select" && !panelCollapsed && (
             <button
               onClick={() => setUserHiddenPanel((prev) => !prev)}
               className="absolute top-6 right-6 z-50 p-2.5 rounded-xl border border-light/10 bg-dark/90 text-light/50 hover:text-light transition-all shadow-xl backdrop-blur-xl pointer-events-auto"
@@ -346,6 +374,212 @@ export default function TestPage() {
           )}
 
           {/* Control Panel */}
+          
+          {currentView === "repo-select" && (
+            <div className="w-full max-w-[500px] pointer-events-auto transition-all duration-700 mx-auto">
+              <div className="rounded-2xl border border-light/10 bg-dark/90 backdrop-blur-xl shadow-2xl shadow-black/30 overflow-hidden">
+                <div className="px-6 py-6 space-y-6">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-serif">Select Repository</h2>
+                    <p className="text-xs text-light/40">Choose a repository to analyze and optimize its execution graph.</p>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <label className="text-xs font-mono text-light/50 uppercase tracking-wider">
+                      Repository
+                    </label>
+
+                    {/* Mode tabs */}
+                    <div className="flex items-center gap-1 bg-light/5 rounded-lg p-1 w-fit">
+                      <button
+                        type="button"
+                        onClick={() => setRepoMode("browse")}
+                        className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                          repoMode === "browse"
+                            ? "bg-light/15 text-light"
+                            : "text-light/40 hover:text-light/70"
+                        }`}
+                      >
+                        My Repositories
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRepoMode("url")}
+                        className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                          repoMode === "url"
+                            ? "bg-light/15 text-light"
+                            : "text-light/40 hover:text-light/70"
+                        }`}
+                      >
+                        Enter URL
+                      </button>
+                    </div>
+
+                    {repoMode === "browse" && (
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-light/30" />
+                          <Input
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="Search repositories..."
+                            className="bg-light/5 border-light/10 placeholder:text-light/25 pl-9"
+                          />
+                        </div>
+
+                        <div className="max-h-52 overflow-y-auto rounded-lg border border-light/10 bg-light/[0.02]">
+                          {fetchState === "loading" && (
+                            <div className="p-3 space-y-2">
+                              {Array.from({ length: 4 }).map((_, i) => (
+                                <div key={i} className="flex items-center gap-3 p-2.5">
+                                  <Skeleton className="w-6 h-6 rounded-full shrink-0 bg-light/10" />
+                                  <div className="flex-1 space-y-1.5">
+                                    <Skeleton className="h-3.5 w-40 bg-light/10" />
+                                    <Skeleton className="h-2.5 w-24 bg-light/10" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {fetchState === "error" && (
+                            <div className="p-4 text-center">
+                              <p className="text-xs text-accent-red">{fetchError}</p>
+                              <button
+                                onClick={() => setFetchState("idle")}
+                                className="text-xs text-light/40 hover:text-light/70 mt-1"
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          )}
+
+                          {fetchState === "loaded" && filtered.length === 0 && (
+                            <div className="p-4 text-center text-xs text-light/30">
+                              {search ? "No repositories match" : "No repositories found"}
+                            </div>
+                          )}
+
+                          {fetchState === "loaded" &&
+                            filtered.map((repo) => {
+                              const isSelected = selectedRepo?.id === repo.id;
+                              return (
+                                <button
+                                  key={repo.id}
+                                  type="button"
+                                  onClick={() => setSelectedRepo(isSelected ? null : repo)}
+                                  className={`w-full text-left px-3 py-2.5 flex items-center gap-3 border-b border-light/5 last:border-b-0 transition-colors ${
+                                    isSelected
+                                      ? "bg-accent-blue/10"
+                                      : "hover:bg-light/5"
+                                  }`}
+                                >
+                                  <img
+                                    src={repo.owner_avatar}
+                                    alt={repo.owner}
+                                    className="w-6 h-6 rounded-full shrink-0"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-medium text-light/80 truncate">
+                                        {repo.full_name}
+                                      </span>
+                                      {repo.private && (
+                                        <Badge
+                                          variant="outline"
+                                          className="text-[9px] px-1 py-0 h-3.5 border-light/15 text-light/40"
+                                        >
+                                          Private
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      {repo.language && (
+                                        <span className="flex items-center gap-1 text-[10px] text-light/35">
+                                          <span
+                                            className="w-2 h-2 rounded-full inline-block"
+                                            style={{
+                                              backgroundColor:
+                                                LANGUAGE_COLORS[repo.language] || "#8b8b8b",
+                                            }}
+                                          />
+                                          {repo.language}
+                                        </span>
+                                      )}
+                                      {repo.updated_at && (
+                                        <span className="text-[10px] text-light/25">
+                                          {formatRelativeTime(repo.updated_at)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {isSelected && (
+                                    <svg
+                                      className="w-4 h-4 text-accent-blue shrink-0"
+                                      fill="none"
+                                      viewBox="0 0 24 24"
+                                      stroke="currentColor"
+                                      strokeWidth={2}
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M5 13l4 4L19 7"
+                                      />
+                                    </svg>
+                                  )}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+
+                    {repoMode === "url" && (
+                      <div className="space-y-1">
+                        <Input
+                          value={url}
+                          onChange={(e) => {
+                            setUrl(e.target.value);
+                            if (urlError) setUrlError("");
+                          }}
+                          placeholder="https://github.com/owner/repository"
+                          className="bg-light/5 border-light/10 placeholder:text-light/25"
+                        />
+                        {urlError && (
+                          <p className="text-[10px] text-accent-red">{urlError}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="px-6 py-4 border-t border-light/5 flex items-center justify-end">
+                  {repoMode === "browse" ? (
+                    <Button
+                      onClick={handleBrowseAnalyze}
+                      disabled={!selectedRepo}
+                      className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6 gap-2"
+                    >
+                      Generate Flowchart
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={(e) => handleUrlSubmit(e as any)}
+                      disabled={!url.trim()}
+                      className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6 gap-2"
+                    >
+                      Generate Flowchart
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {currentView !== "repo-select" && (
           <div
             className={`w-full max-w-[400px] pointer-events-auto transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] flex flex-col justify-center translate-y-0 h-auto ${
               panelCollapsed
@@ -357,174 +591,36 @@ export default function TestPage() {
           >
             <div className="rounded-2xl border border-light/10 bg-dark/90 backdrop-blur-xl shadow-2xl shadow-black/30 overflow-hidden">
               <div className="px-6 py-5 space-y-6">
-                {/* 1. Repository Selection */}
+                {/* 1. Node Selection UI */}
                 <div className="space-y-3">
-                  <label className="text-xs font-mono text-light/50 uppercase tracking-wider">
-                    Repository
-                  </label>
-
-                  {/* Mode tabs */}
-                  <div className="flex items-center gap-1 bg-light/5 rounded-lg p-1 w-fit">
-                    <button
-                      type="button"
-                      onClick={() => setRepoMode("browse")}
-                      className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                        repoMode === "browse"
-                          ? "bg-light/15 text-light"
-                          : "text-light/40 hover:text-light/70"
-                      }`}
-                    >
-                      My Repositories
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRepoMode("url")}
-                      className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                        repoMode === "url"
-                          ? "bg-light/15 text-light"
-                          : "text-light/40 hover:text-light/70"
-                      }`}
-                    >
-                      Enter URL
-                    </button>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-mono text-light/50 uppercase tracking-wider">
+                      Target Nodes
+                    </label>
+                    <span className="text-[10px] font-mono text-light/40">
+                      {selectedNodeIds.length} / {FAKE_GRAPH_DATA.nodes.length} Selected
+                    </span>
                   </div>
-
-                  {repoMode === "browse" && (
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-light/30" />
-                        <Input
-                          value={search}
-                          onChange={(e) => setSearch(e.target.value)}
-                          placeholder="Search repositories..."
-                          className="bg-light/5 border-light/10 placeholder:text-light/25 pl-9"
-                        />
-                      </div>
-
-                      <div className="max-h-52 overflow-y-auto rounded-lg border border-light/10 bg-light/[0.02]">
-                        {fetchState === "loading" && (
-                          <div className="p-3 space-y-2">
-                            {Array.from({ length: 4 }).map((_, i) => (
-                              <div key={i} className="flex items-center gap-3 p-2.5">
-                                <Skeleton className="w-6 h-6 rounded-full shrink-0 bg-light/10" />
-                                <div className="flex-1 space-y-1.5">
-                                  <Skeleton className="h-3.5 w-40 bg-light/10" />
-                                  <Skeleton className="h-2.5 w-24 bg-light/10" />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {fetchState === "error" && (
-                          <div className="p-4 text-center">
-                            <p className="text-xs text-accent-red">{fetchError}</p>
-                            <button
-                              onClick={() => setFetchState("idle")}
-                              className="text-xs text-light/40 hover:text-light/70 mt-1"
-                            >
-                              Retry
-                            </button>
-                          </div>
-                        )}
-
-                        {fetchState === "loaded" && filtered.length === 0 && (
-                          <div className="p-4 text-center text-xs text-light/30">
-                            {search ? "No repositories match" : "No repositories found"}
-                          </div>
-                        )}
-
-                        {fetchState === "loaded" &&
-                          filtered.map((repo) => {
-                            const isSelected = selectedRepo?.id === repo.id;
-                            return (
-                              <button
-                                key={repo.id}
-                                type="button"
-                                onClick={() => setSelectedRepo(isSelected ? null : repo)}
-                                className={`w-full text-left px-3 py-2.5 flex items-center gap-3 border-b border-light/5 last:border-b-0 transition-colors ${
-                                  isSelected
-                                    ? "bg-accent-blue/10"
-                                    : "hover:bg-light/5"
-                                }`}
-                              >
-                                <img
-                                  src={repo.owner_avatar}
-                                  alt={repo.owner}
-                                  className="w-6 h-6 rounded-full shrink-0"
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs font-medium text-light/80 truncate">
-                                      {repo.full_name}
-                                    </span>
-                                    {repo.private && (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-[9px] px-1 py-0 h-3.5 border-light/15 text-light/40"
-                                      >
-                                        Private
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    {repo.language && (
-                                      <span className="flex items-center gap-1 text-[10px] text-light/35">
-                                        <span
-                                          className="w-2 h-2 rounded-full inline-block"
-                                          style={{
-                                            backgroundColor:
-                                              LANGUAGE_COLORS[repo.language] || "#8b8b8b",
-                                          }}
-                                        />
-                                        {repo.language}
-                                      </span>
-                                    )}
-                                    {repo.updated_at && (
-                                      <span className="text-[10px] text-light/25">
-                                        {formatRelativeTime(repo.updated_at)}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                {isSelected && (
-                                  <svg
-                                    className="w-4 h-4 text-accent-blue shrink-0"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth={2}
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      d="M5 13l4 4L19 7"
-                                    />
-                                  </svg>
-                                )}
-                              </button>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  )}
-
-                  {repoMode === "url" && (
-                    <div className="space-y-1">
-                      <Input
-                        value={url}
-                        onChange={(e) => {
-                          setUrl(e.target.value);
-                          if (urlError) setUrlError("");
-                        }}
-                        placeholder="https://github.com/owner/repository"
-                        className="bg-light/5 border-light/10 placeholder:text-light/25"
-                      />
-                      {urlError && (
-                        <p className="text-[10px] text-accent-red">{urlError}</p>
-                      )}
-                    </div>
-                  )}
+                  
+                  <div className="flex items-center gap-3 px-3 py-2.5 bg-light/5 rounded-lg border border-light/5 hover:bg-light/10 transition-colors cursor-pointer"
+                       onClick={() => {
+                         if (selectedNodeIds.length === FAKE_GRAPH_DATA.nodes.length) {
+                           setSelectedNodeIds([]);
+                         } else {
+                           setSelectedNodeIds(FAKE_GRAPH_DATA.nodes.map(n => n.id));
+                         }
+                       }}>
+                    <input 
+                      type="checkbox" 
+                      id="selectAllNodes"
+                      checked={selectedNodeIds.length === FAKE_GRAPH_DATA.nodes.length && FAKE_GRAPH_DATA.nodes.length > 0}
+                      readOnly
+                      className="w-4 h-4 rounded border-light/20 bg-dark/50 text-accent-blue focus:ring-accent-blue/30 focus:ring-offset-dark pointer-events-none"
+                    />
+                    <label className="text-xs text-light/80 cursor-pointer user-select-none select-none pointer-events-none">
+                      Select All / Optimize All Modules
+                    </label>
+                  </div>
                 </div>
 
                 {/* 2. Optimization Priority */}
@@ -584,28 +680,22 @@ export default function TestPage() {
 
               {/* Action area */}
               <div className="px-6 py-4 border-t border-light/5 flex items-center justify-end">
-                {repoMode === "browse" ? (
-                  <Button
-                    onClick={handleBrowseAnalyze}
-                    disabled={!selectedRepo}
-                    className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6 gap-2"
-                  >
-                    Analyze
-                    <ArrowRight className="w-4 h-4" />
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={(e) => handleUrlSubmit(e as any)}
-                    disabled={!url.trim()}
-                    className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6 gap-2"
-                  >
-                    Analyze
-                    <ArrowRight className="w-4 h-4" />
-                  </Button>
-                )}
+                <Button
+                  onClick={handleStartOptimization}
+                  disabled={selectedNodeIds.length === 0}
+                  className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6 gap-2 w-full justify-between"
+                >
+                  <span className="flex-1 text-center">
+                    {selectedNodeIds.length === FAKE_GRAPH_DATA.nodes.length 
+                      ? "Optimize All Modules" 
+                      : `Optimize ${selectedNodeIds.length} Node${selectedNodeIds.length === 1 ? '' : 's'}`}
+                  </span>
+                  <ArrowRight className="w-4 h-4 right-0" />
+                </Button>
               </div>
             </div>
           </div>
+          )}
 
           {/* Running / Status overlay (shown when panel collapses) */}
           <div
