@@ -67,11 +67,11 @@ async def _regenerate_benchmark(
         timeout_guidance = """
 ### CRITICAL: Execution Timeout Detected
 The script took too long to run. The function has high algorithmic complexity.
-**You MUST reduce the input size or number of iterations significantly:**
-- Start with N=1000 or fewer (not 10,000+)
-- Use 5-10 iterations only (not 50+)
-- Prioritize completing in under 15 seconds total
-- Smaller inputs reveal algorithmic differences better than slow large inputs
+**You MUST reduce the input size or number of iterations SIGNIFICANTLY:**
+- **O(n²)**: Set N = 300 - 500.
+- **O(n³)**: Set N = 50 - 150.
+- Use 5-10 iterations only.
+- Target a total runtime of < 2 seconds.
 """
 
     is_attribute_error = "AttributeError" in error_msg
