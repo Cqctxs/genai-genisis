@@ -187,8 +187,35 @@ def _esm_to_cjs(code: str) -> str:
     return code
 
 
+def _extract_local_module_names(repo_files: dict[str, str]) -> set[str]:
+    """Build a set of top-level Python module names from the repo file paths.
+
+    For a file like ``advanced_demo/server.py`` this yields ``advanced_demo``.
+    For a root-level ``database.py`` this yields ``database``.
+    Directories containing ``__init__.py`` are included as packages.
+    """
+    import os
+
+    modules: set[str] = set()
+    for path in repo_files:
+        if not path.endswith(".py"):
+            continue
+        parts = path.replace("\\", "/").split("/")
+        if len(parts) == 1:
+            # Root-level file: ``database.py`` -> ``database``
+            modules.add(os.path.splitext(parts[0])[0])
+        else:
+            # Nested file: top-level directory is the importable package name
+            modules.add(parts[0])
+    return modules
+
+
 def _write_repo_files(workdir: str, repo_files: dict[str, str]) -> None:
-    """Write repo file contents into the working directory."""
+    """Write repo file contents into the working directory.
+
+    Also ensures every sub-directory that contains Python files has an
+    ``__init__.py`` so it is treated as a package and sibling imports work.
+    """
     import os
 
     for path, content in repo_files.items():
@@ -196,6 +223,20 @@ def _write_repo_files(workdir: str, repo_files: dict[str, str]) -> None:
         os.makedirs(os.path.dirname(full), exist_ok=True)
         with open(full, "w") as f:
             f.write(content)
+
+    # Ensure __init__.py exists in every directory that contains .py files
+    # so that Python treats them as packages (required for relative imports).
+    py_dirs: set[str] = set()
+    for path in repo_files:
+        if path.endswith(".py"):
+            parent = os.path.dirname(os.path.join(workdir, path))
+            if parent and parent != workdir:
+                py_dirs.add(parent)
+    for d in py_dirs:
+        init_path = os.path.join(d, "__init__.py")
+        if not os.path.exists(init_path):
+            with open(init_path, "w") as f:
+                f.write("")
 
 
 @app.function(image=python_image, timeout=FUNCTION_TIMEOUT)
@@ -228,12 +269,22 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     with open(os.path.join(workdir, "_benchmark.py"), "w") as f:
         f.write(PYTHON_MEMORY_WRAPPER)
 
-    # Explicitly set PYTHONPATH to the workdir so that imports resolve from
-    # the repo's local files first, not from system site-packages.
+    # Explicitly set PYTHONPATH to the workdir *and* every sub-directory that
+    # contains Python files so that sibling imports resolve correctly.
+    # e.g. advanced_demo/server.py can ``import database`` when database.py
+    # sits next to it in advanced_demo/.
     env = os.environ.copy()
-    env["PYTHONPATH"] = workdir + os.pathsep + env.get("PYTHONPATH", "")
+    py_dirs: set[str] = {workdir}
+    for path in repo_files:
+        if path.endswith(".py"):
+            parent = os.path.dirname(os.path.join(workdir, path))
+            if parent and parent != workdir:
+                py_dirs.add(parent)
+    env["PYTHONPATH"] = os.pathsep.join(sorted(py_dirs)) + os.pathsep + env.get("PYTHONPATH", "")
 
-    for _ in range(3):
+    local_modules = _extract_local_module_names(repo_files)
+
+    for attempt in range(3):
         result = subprocess.run(
             ["python", os.path.join(workdir, "_benchmark.py")],
             capture_output=True,
@@ -247,7 +298,19 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
                 r"ModuleNotFoundError: No module named '([^']+)'", result.stderr
             )
             if m:
-                missing_pkg = m.group(1)
+                # Extract the top-level module name (e.g. "database" from "database.utils")
+                missing_pkg = m.group(1).split(".")[0]
+                if missing_pkg in local_modules:
+                    # Local module — pip install won't help.  Fail fast.
+                    import sys
+                    print(
+                        f"Local module '{missing_pkg}' failed to resolve. "
+                        f"Check sys.path. (local_modules={sorted(local_modules)})",
+                        file=sys.stderr,
+                    )
+                    break
+
+                # External module — try to pip install and retry
                 pkg_map = {
                     "PIL": "pillow",
                     "yaml": "pyyaml",
@@ -299,7 +362,17 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     with open(os.path.join(workdir, "_benchmark.js"), "w") as f:
         f.write(JS_MEMORY_WRAPPER)
 
-    for _ in range(3):
+    # Build set of local JS module basenames for fast-fail detection
+    local_js_modules: set[str] = set()
+    for path in repo_files:
+        if path.endswith((".js", ".ts", ".jsx", ".tsx")):
+            parts = path.replace("\\", "/").split("/")
+            if len(parts) == 1:
+                local_js_modules.add(os.path.splitext(parts[0])[0])
+            else:
+                local_js_modules.add(parts[0])
+
+    for attempt in range(3):
         result = subprocess.run(
             ["node", os.path.join(workdir, "_benchmark.js")],
             capture_output=True,
@@ -311,28 +384,46 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
             m = re.search(r"Cannot find module '([^']+)'", result.stderr)
             if m:
                 missing_pkg = m.group(1)
-                # handle scoped packages vs normal
-                if not missing_pkg.startswith("."):
-                    # extract root package name, ignoring subpaths like 'lodash/merge'
-                    root_pkg = missing_pkg.split("/")[0]
-                    if missing_pkg.startswith("@"):
-                        parts = missing_pkg.split("/")
-                        if len(parts) >= 2:
-                            root_pkg = f"{parts[0]}/{parts[1]}"
-
-                    subprocess.run(
-                        [
-                            "npm",
-                            "install",
-                            "--no-audit",
-                            "--no-fund",
-                            "--loglevel=error",
-                            root_pkg,
-                        ],
-                        cwd=workdir,
-                        capture_output=True,
+                # Relative imports (starting with .) are local — fail fast
+                if missing_pkg.startswith("."):
+                    import sys
+                    print(
+                        f"Local module '{missing_pkg}' failed to resolve. "
+                        f"Check file paths in sandbox.",
+                        file=sys.stderr,
                     )
-                    continue
+                    break
+
+                # extract root package name, ignoring subpaths like 'lodash/merge'
+                root_pkg = missing_pkg.split("/")[0]
+                if missing_pkg.startswith("@"):
+                    parts = missing_pkg.split("/")
+                    if len(parts) >= 2:
+                        root_pkg = f"{parts[0]}/{parts[1]}"
+
+                # Check if this is a local JS module — fail fast
+                if root_pkg in local_js_modules:
+                    import sys
+                    print(
+                        f"Local module '{root_pkg}' failed to resolve. "
+                        f"Check file paths in sandbox. (local_modules={sorted(local_js_modules)})",
+                        file=sys.stderr,
+                    )
+                    break
+
+                subprocess.run(
+                    [
+                        "npm",
+                        "install",
+                        "--no-audit",
+                        "--no-fund",
+                        "--loglevel=error",
+                        root_pkg,
+                    ],
+                    cwd=workdir,
+                    capture_output=True,
+                )
+                continue
         break
 
     return {

@@ -403,8 +403,8 @@ async def run_benchmarks_node(state: AgentState) -> dict:
     for f in file_tree:
         try:
             repo_files[f] = read_file(repo_path, f)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("repo_file_read_failed", file=f, error=str(e))
 
     # Apply optimized files so the final benchmark actually measures the new code
     for opt_file, opt_content in state.get("optimized_files", {}).items():
