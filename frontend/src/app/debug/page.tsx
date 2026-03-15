@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { LiveTelemetry } from "@/components/live-telemetry";
+import { ProgressStepper } from "@/components/progress-stepper";
 import { PerformanceGraph } from "@/components/performance-graph";
 import { ScoreDashboard } from "@/components/score-dashboard";
 import { PullRequestView } from "@/components/comparison-view";
@@ -334,6 +334,7 @@ const FAKE_COMPARISON: ComparisonReport = {
     overall_before: 3420,
     overall_after: 8940,
     time_score: 91,
+    time_score_before: 35,
     time_score_before: 35,
     memory_score: 85,
     memory_score_before: 28,
@@ -701,8 +702,8 @@ export default function DebugPage() {
               </h2>
             </div>
 
-            {/* Live Telemetry */}
-            <Section title="Live Telemetry">
+            {/* Progress Stepper */}
+            <Section title="Progress Stepper">
               <div className="flex flex-wrap gap-2 mb-4">
                 {PHASES.map((p) => (
                   <Button
