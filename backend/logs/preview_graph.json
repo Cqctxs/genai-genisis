@@ -1,107 +1,22 @@
 {
   "nodes": [
     {
-      "id": "main",
-      "label": "Orchestrate Pipeline",
+      "id": "node_start",
+      "label": "Entry Point",
       "file": "demo/main.py",
-      "function_name": "main",
-      "line_start": 6,
-      "line_end": 28,
+      "function_name": null,
+      "line_start": null,
+      "line_end": null,
       "node_type": "function",
       "inputs": null,
       "outputs": null,
       "metadata": null,
       "avg_time_ms": null,
       "memory_mb": null,
-      "severity": "medium"
+      "severity": "low"
     },
     {
-      "id": "load_transactions",
-      "label": "Load Transactions (JSON)",
-      "file": "demo/data_parser.py",
-      "function_name": "load_transactions",
-      "line_start": 3,
-      "line_end": 10,
-      "node_type": "function",
-      "inputs": {
-        "filepath": "string"
-      },
-      "outputs": {
-        "transactions": "list"
-      },
-      "metadata": {
-        "bottleneck": "Reads entire file into giant string memory buffer"
-      },
-      "avg_time_ms": null,
-      "memory_mb": null,
-      "severity": "high"
-    },
-    {
-      "id": "load_users",
-      "label": "Load Users (JSONL)",
-      "file": "demo/data_parser.py",
-      "function_name": "load_users",
-      "line_start": 12,
-      "line_end": 19,
-      "node_type": "function",
-      "inputs": {
-        "filepath": "string"
-      },
-      "outputs": {
-        "users": "list"
-      },
-      "metadata": {
-        "bottleneck": "readlines() loads all lines into memory simultaneously"
-      },
-      "avg_time_ms": null,
-      "memory_mb": null,
-      "severity": "high"
-    },
-    {
-      "id": "enrich_transactions",
-      "label": "Enrich Transactions",
-      "file": "demo/processor.py",
-      "function_name": "enrich_transactions",
-      "line_start": 1,
-      "line_end": 20,
-      "node_type": "function",
-      "inputs": {
-        "users": "list",
-        "transactions": "list"
-      },
-      "outputs": {
-        "enriched": "list"
-      },
-      "metadata": {
-        "complexity": "O(N * M) nested lookup"
-      },
-      "avg_time_ms": null,
-      "memory_mb": null,
-      "severity": "critical"
-    },
-    {
-      "id": "generate_report",
-      "label": "Generate Text Report",
-      "file": "demo/processor.py",
-      "function_name": "generate_report",
-      "line_start": 22,
-      "line_end": 36,
-      "node_type": "function",
-      "inputs": {
-        "enriched_transactions": "list"
-      },
-      "outputs": {
-        "report": "string"
-      },
-      "metadata": {
-        "bottleneck": "Inefficient string concatenation in loop"
-      },
-      "avg_time_ms": null,
-      "memory_mb": null,
-      "severity": "high"
-    },
-    {
-      "id": "generate_mock_data",
+      "id": "node_gen_mock",
       "label": "Generate Mock Data",
       "file": "demo/generator.py",
       "function_name": "generate_mock_data",
@@ -116,50 +31,160 @@
       "metadata": null,
       "avg_time_ms": null,
       "memory_mb": null,
-      "severity": "low"
+      "severity": "medium"
+    },
+    {
+      "id": "node_main",
+      "label": "Main Pipeline Orchestrator",
+      "file": "demo/main.py",
+      "function_name": "main",
+      "line_start": 6,
+      "line_end": 28,
+      "node_type": "function",
+      "inputs": null,
+      "outputs": null,
+      "metadata": {
+        "concurrency": "concurrent.futures"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "medium"
+    },
+    {
+      "id": "node_load_trans",
+      "label": "Load Transactions JSON",
+      "file": "demo/data_parser.py",
+      "function_name": "load_transactions",
+      "line_start": 3,
+      "line_end": 10,
+      "node_type": "db",
+      "inputs": {
+        "filepath": "str"
+      },
+      "outputs": {
+        "transactions": "list"
+      },
+      "metadata": {
+        "table": "transactions.json",
+        "operation": "READ (Full File String)"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "high"
+    },
+    {
+      "id": "node_load_users",
+      "label": "Load Users JSONL",
+      "file": "demo/data_parser.py",
+      "function_name": "load_users",
+      "line_start": 12,
+      "line_end": 19,
+      "node_type": "db",
+      "inputs": {
+        "filepath": "str"
+      },
+      "outputs": {
+        "users": "list"
+      },
+      "metadata": {
+        "operation": "READ (readlines)",
+        "table": "users.jsonl"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "high"
+    },
+    {
+      "id": "node_enrich",
+      "label": "Enrich Transactions",
+      "file": "demo/processor.py",
+      "function_name": "enrich_transactions",
+      "line_start": 1,
+      "line_end": 20,
+      "node_type": "function",
+      "inputs": {
+        "transactions": "list",
+        "users": "list"
+      },
+      "outputs": {
+        "enriched_transactions": "list"
+      },
+      "metadata": {
+        "complexity": "O(N*M)"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "critical"
+    },
+    {
+      "id": "node_report",
+      "label": "Generate Report",
+      "file": "demo/processor.py",
+      "function_name": "generate_report",
+      "line_start": 22,
+      "line_end": 36,
+      "node_type": "function",
+      "inputs": {
+        "enriched_transactions": "list"
+      },
+      "outputs": {
+        "report": "str"
+      },
+      "metadata": {
+        "issue": "Inefficient string concat"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "high"
     }
   ],
   "edges": [
     {
-      "source": "main",
-      "target": "load_transactions",
+      "source": "node_start",
+      "target": "node_gen_mock",
       "label": "",
       "edge_type": "call"
     },
     {
-      "source": "main",
-      "target": "load_users",
+      "source": "node_start",
+      "target": "node_main",
       "label": "",
       "edge_type": "call"
     },
     {
-      "source": "main",
-      "target": "enrich_transactions",
+      "source": "node_main",
+      "target": "node_load_trans",
+      "label": "get transaction data",
+      "edge_type": "call"
+    },
+    {
+      "source": "node_main",
+      "target": "node_load_users",
+      "label": "get user records",
+      "edge_type": "call"
+    },
+    {
+      "source": "node_main",
+      "target": "node_enrich",
       "label": "",
       "edge_type": "call"
     },
     {
-      "source": "main",
-      "target": "generate_report",
+      "source": "node_main",
+      "target": "node_report",
       "label": "",
       "edge_type": "call"
     },
     {
-      "source": "enrich_transactions",
-      "target": "enrich_transactions",
-      "label": "O(N * M) join loop",
+      "source": "node_enrich",
+      "target": "node_enrich",
+      "label": "O(N * M) nested lookup",
       "edge_type": "loop_back"
     },
     {
-      "source": "generate_report",
-      "target": "generate_report",
-      "label": "string concatenation loop",
-      "edge_type": "loop_back"
-    },
-    {
-      "source": "generate_mock_data",
-      "target": "generate_mock_data",
-      "label": "data generation loop",
+      "source": "node_report",
+      "target": "node_report",
+      "label": "iterate and concatenate strings",
       "edge_type": "loop_back"
     }
   ]

@@ -143,15 +143,18 @@ function fmt(n: number): string {
 export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
   const { benchy_score, functions, summary, sandbox_specs } = comparison;
 
-  const totalOldTime = functions.reduce((acc, f) => acc + f.old_time_ms, 0);
-  const totalNewTime = functions.reduce((acc, f) => acc + f.new_time_ms, 0);
   const totalOldMem = functions.reduce((acc, f) => acc + f.old_memory_mb, 0);
   const totalNewMem = functions.reduce((acc, f) => acc + f.new_memory_mb, 0);
-  const avgSpeedup =
-    functions.length > 0
-      ? functions.reduce((acc, f) => acc + f.speedup_factor, 0) /
-        functions.length
-      : 0;
+
+  // Geometric mean of relative speedups — balances small/large function improvements
+  const speedups = functions.map((f) => Math.max(f.speedup_factor, 0.01));
+  const geomeanSpeedup =
+    speedups.length > 0
+      ? Math.exp(
+          speedups.reduce((acc, val) => acc + Math.log(val), 0) /
+            speedups.length,
+        )
+      : 1;
 
   return (
     <div className="space-y-6">
@@ -159,36 +162,26 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
         <CardContent className="py-8">
           <div className="text-center space-y-4">
             <p className="text-xs font-semibold uppercase tracking-widest text-accent-blue/80">
-              Total Execution Time
+              Overall Speedup
             </p>
-            <div className="flex items-center justify-center gap-4">
-              <div className="text-2xl text-light/40 flex items-baseline gap-1">
-                <AnimatedScore target={totalOldTime} duration={1} />
-                <span className="text-sm">ms</span>
-              </div>
-              <svg
-                className="w-6 h-6 text-light/20"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
-                />
-              </svg>
-              <motion.div
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.5, duration: 0.5 }}
-                className="text-5xl font-bold text-accent-blue flex items-baseline gap-2"
-              >
-                <AnimatedScore target={totalNewTime} />
-                <span className="text-2xl font-medium opacity-60">ms</span>
-              </motion.div>
-            </div>
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.5, duration: 0.5 }}
+              className={`text-5xl font-bold flex items-baseline justify-center gap-2 ${
+                geomeanSpeedup >= 1.05
+                  ? "text-accent-green"
+                  : geomeanSpeedup < 1.0
+                    ? "text-accent-red"
+                    : "text-light"
+              }`}
+            >
+              <AnimatedScore target={geomeanSpeedup} decimals={2} />
+              <span className="text-2xl font-medium opacity-60">x</span>
+            </motion.div>
+            <p className="text-xs text-light/40">
+              Geometric mean of per-function speedups
+            </p>
 
             <p className="text-xs font-semibold uppercase tracking-widest text-accent-green/80 mt-6">
               Total Peak Memory
@@ -310,17 +303,16 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
 
         <div className="space-y-3">
           <MetricCard
-            label="Execution Time"
-            before={fmt(totalOldTime)}
-            after={fmt(totalNewTime)}
-            unit=" ms"
-            isNegative={totalNewTime > totalOldTime}
-            improvement={(() => {
-              const diff = totalOldTime - totalNewTime;
-              return diff >= 0
-                ? `${fmt(diff)} ms faster`
-                : `${fmt(Math.abs(diff))} ms slower`;
-            })()}
+            label="Overall Speedup"
+            before="1.0"
+            after={fmt(geomeanSpeedup)}
+            unit="x"
+            isNegative={geomeanSpeedup < 1}
+            improvement={
+              geomeanSpeedup >= 1
+                ? `${fmt(geomeanSpeedup)}x faster (geometric mean)`
+                : `${fmt(1 / geomeanSpeedup)}x slower (geometric mean)`
+            }
           />
           <MetricCard
             label="Memory Peak"
@@ -334,18 +326,6 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 ? `-${fmt(diff)} MB`
                 : `+${fmt(Math.abs(diff))} MB`;
             })()}
-          />
-          <MetricCard
-            label="Avg Speedup"
-            before="1.0"
-            after={fmt(avgSpeedup)}
-            unit="x"
-            isNegative={avgSpeedup < 1}
-            improvement={
-              avgSpeedup >= 1
-                ? `${fmt(avgSpeedup)}x faster on average`
-                : `${fmt(1 / avgSpeedup)}x slower on average`
-            }
           />
         </div>
       </div>
