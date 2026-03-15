@@ -224,6 +224,11 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     with open(os.path.join(workdir, "_benchmark.py"), "w") as f:
         f.write(PYTHON_MEMORY_WRAPPER)
 
+    # Explicitly set PYTHONPATH to the workdir so that imports resolve from
+    # the repo's local files first, not from system site-packages.
+    env = os.environ.copy()
+    env["PYTHONPATH"] = workdir + os.pathsep + env.get("PYTHONPATH", "")
+
     for _ in range(3):
         result = subprocess.run(
             ["python", os.path.join(workdir, "_benchmark.py")],
@@ -231,6 +236,7 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
             text=True,
             timeout=BENCHMARK_TIMEOUT,
             cwd=workdir,
+            env=env,
         )
         if result.returncode != 0 and "ModuleNotFoundError" in result.stderr:
             m = re.search(
