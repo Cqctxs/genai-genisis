@@ -13,6 +13,7 @@ from agent.schemas import (
     TriageResult,
 )
 from agent.state import AgentState
+from agent.nodes.benchmarker import BENCHMARK_PROMPT
 from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 from services.log_utils import log_block
 from services.github_service import get_file_tree, read_file
@@ -61,108 +62,6 @@ CRITICAL CONSTRAINTS FOR YOUR ANALYSIS:
 
 Return a structured analysis with specific hotspots, their severity, and reasoning."""
 
-BENCHMARK_PROMPT = """You are a benchmarking expert. Given one or more performance bottlenecks
-in a codebase, generate a separate self-contained profiling script for EACH hotspot.
-
-CRITICAL SANDBOX CONSTRAINTS:
-- The sandbox has common packages pre-installed (see list below), but you should
-  STILL prefer inlining or mocking over importing when the dependency isn't essential
-  to measuring the hotspot's algorithmic performance.
-- Pre-installed Python packages: numpy, pandas, requests, aiohttp, pydantic, sqlalchemy,
-  fastapi, flask, django, celery, redis, httpx, beautifulsoup4, lxml, pillow, scipy,
-  scikit-learn, pytest, pyinstrument, memory_profiler.
-- Pre-installed Node.js packages (available via require()): lodash, express, react,
-  react-dom, next, axios, framer-motion, zod, typescript, ts-node, jest, mocha, chai,
-  mongoose, pg, knex, sequelize, prisma, socket.io, ws, jsonwebtoken, bcrypt, uuid,
-  dayjs, moment, date-fns, cheerio, node-fetch, @tanstack/react-query, swr.
-- If a dependency is NOT in the pre-installed list above, you MUST mock/stub it.
-  Do NOT run `npm install`, `pip install`, or any package manager commands in the script.
-  Doing so will crash the container.
-- You MUST import the target function from the repo using the exact file path provided in the "File:" section. For instance, if the file is `advanced_demo/data_generator.py`, use `from advanced_demo.data_generator import function_name` in Python or `require('./advanced_demo/data_generator')` in JS. Do NOT use fake names like `from hotspot_1`.
-- **FILE I/O IS ALLOWED**: The sandbox has an ephemeral filesystem. **Do NOT mock `open()` or `builtins.open`** or filesystem operations (e.g. `fs.writeFileSync`). Creating, reading, and writing temporary files in the working directory is expected and required for accurate I/O benchmarking.
-- Create mock/stub data instead of importing real modules when measuring pure logic.
-- If you mock functions using `unittest.mock.patch`, you MUST import the module you are patching FIRST. (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Otherwise it will fail with AttributeError.
-  CRITICAL JSON & ESCAPING CONSTRAINTS:
-  - Do NOT generate ANY docstrings or comments inside the Python/JS code.
-  - Do NOT use triple quotes (`\"\"\"` or `'''`) anywhere in the script to prevent JSON deserialization syntax errors.
-  - Prefer single quotes (`'`) over double quotes (`"`) for standard strings to minimize escaping issues.
-INPUT SIZE — THIS IS CRITICAL:
-- Use input sizes large enough to reveal algorithmic complexity differences.
-- For array/list operations: N = 10 000 minimum (50 000 preferred).
-- For nested loop / O(n²) patterns: N = 5 000–10 000 so quadratic cost is measurable.
-- For map/dict lookups: N = 50 000+ entries.
-- For I/O-bound code: simulate at least 20 sequential operations.
-- For string operations: use strings of 10 000+ characters.
-- NEVER use trivially small inputs (N < 100). Small inputs hide algorithmic improvements
-  behind constant-factor overhead and produce misleading benchmark results.
-- TOTAL SCRIPT EXECUTION MUST COMPLETE WITHIN 30 SECONDS. If the function is slow,
-  reduce the number of iterations (minimum 5) or input size until total runtime stays under 30s.
-  Use a warm-up call to estimate per-call cost, then choose iterations accordingly.
-
-## PREVENTING DEAD CODE ELIMINATION (CRITICAL)
-
-JavaScript V8 and Python compilers aggressively optimize away function calls whose return
-values are never used. If you do NOT follow these rules, your benchmark will report 0.00ms
-because the engine literally deletes the code.
-
-1. ALWAYS capture the return value of EVERY function call inside the timing loop.
-2. Accumulate results into a variable that PERSISTS across iterations (e.g. a checksum,
-   an XOR hash, or append to an array).
-3. AFTER the timing loop, PRINT or USE the accumulated result so the engine cannot
-   prove the computation is dead.
-
-### JavaScript anti-DCE pattern (REQUIRED):
-```javascript
-let _checksum = 0;
-const start = performance.now();
-for (let i = 0; i < iterations; i++) {
-    const result = targetFunction(testData);
-    _checksum += (typeof result === 'object' ? JSON.stringify(result).length : Number(result)) || 1;
-}
-const elapsed = performance.now() - start;
-// Anti-DCE anchor — do NOT remove
-if (_checksum === -Infinity) console.log(_checksum);
-```
-
-### Python anti-DCE pattern (REQUIRED):
-```python
-_checksum = 0
-start = time.perf_counter()
-for _ in range(iterations):
-    result = target_function(test_data)
-    _checksum += len(str(result)) if result is not None else 1
-elapsed = time.perf_counter() - start
-# Anti-DCE anchor
-assert _checksum >= 0, _checksum
-```
-
-## DYNAMIC ITERATION SCALING (REQUIRED)
-
-Do NOT hardcode the number of iterations. Use this pattern:
-1. Run the function ONCE as a warmup and measure the single-call time.
-2. If single_call < 0.1ms: use 10,000 iterations
-3. If single_call < 1ms: use 5,000 iterations
-4. If single_call < 10ms: use 500 iterations
-5. If single_call < 100ms: use 50 iterations
-6. If single_call >= 100ms: use 10 iterations
-7. Ensure total estimated runtime stays under 25 seconds.
-8. The reported avg_time_ms MUST be > 0.001. If it rounds to 0, increase input size.
-
-For Python: Use time.perf_counter() for timing. Copy the target function into the script,
-set up realistic-sized test data (see INPUT SIZE above), and measure execution time.
-Output timing in JSON format to stdout like:
-{"function": "name", "avg_time_ms": 123.4, "iterations": 100}
-
-For JavaScript/TypeScript: Use require() for imports (NOT import syntax). Use performance.now() for timing.
-Copy the target function into the script, set up realistic-sized test data (see INPUT SIZE above),
-and output JSON results to stdout in the same format.
-Node.js runs in CommonJS mode, so use require() not import statements.
-Only require() Node.js built-in modules.
-
-Do NOT include any memory measurement code. Memory is measured automatically by the runtime wrapper.
-
-The script must be completely self-contained - copy function code inline, mock all dependencies.
-Print ONLY the JSON result object to stdout."""
 
 
 async def parse_ast_node(state: AgentState) -> dict:

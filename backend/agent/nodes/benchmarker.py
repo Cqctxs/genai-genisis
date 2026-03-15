@@ -9,72 +9,44 @@ from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
 log = structlog.get_logger()
 
-BENCHMARK_PROMPT = """You are a benchmarking expert. Given an analysis of performance bottlenecks
-in a codebase, generate profiling scripts that measure the execution time of each identified hotspot.
+# --- Benchmark Prompt Components ---
 
-## Sandbox Environment
+PROMPT_SANDBOX = """## Sandbox Environment
 
 The benchmark script runs inside an isolated sandbox where:
 - The repo's source files are available in the working directory (same layout as the repo).
-- The repo's dependencies from requirements.txt / package.json ARE already installed.
-- PYTHONPATH is set to the working directory, but for extra safety, **your Python benchmark script MUST begin with**:
+- The repo's dependencies are already installed. Do NOT call pip/npm install.
+- PYTHONPATH is set, but for extra safety, **your Python benchmark script MUST begin with**:
   `import sys, os; sys.path.insert(0, os.getcwd())`
-  This ensures the repo's local modules are always found before any system site-packages.
-- You MUST import from the repo normally using the actual file path provided (e.g. if the File is `advanced_demo/analytics.py`, use `from advanced_demo.analytics import process_data` in Python or `require('./advanced_demo/analytics')` in JS).
-- Do NOT use generic names like `from hotspot_1 import ...`. The file is named exactly what is passed in the "File:" field.
-- Do NOT reimplement, inline, or stub out functions that exist in the repo.
-- Do NOT call pip install or npm install — dependencies are pre-installed.
-- If a function requires database connections, network I/O, or external services to run,
-  create minimal mock/stub data so the function's core logic can still execute.
-  **CRITICAL**: If you are mocking an I/O bound external call (like network or DB), your mock MUST include realistic artificial latency (e.g., `time.sleep(0.05)` or `await new Promise(r => setTimeout(r, 50))`) so concurrency optimizations can demonstrate actual speedup without pure CPU lock overhead.
-- If you mock functions using `unittest.mock.patch`, you MUST import the module you are patching FIRST. (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Otherwise it will fail with AttributeError.
-- **CRITICAL MOCK RULE**: If you use `unittest.mock.patch` or `MagicMock` to mock functions that are passed as arguments to other functions, you MUST explicitly assign a `__name__` attribute to the mock object (e.g., `mock_function.__name__ = 'my_function'`) to prevent `AttributeError` during introspection such as `func.__name__`.
-- **PREFER REAL CODE OVER MOCKING**: Do NOT aggressively mock internal target functions. Always prefer executing the actual repository code. Only mock external dependencies (network APIs, databases) that would hang or destroy the environment.
-- **FILE I/O IS FULLY ALLOWED**: The sandbox has an ephemeral filesystem. **Do NOT mock `open()`, `builtins.open`, or `fs.writeFileSync`**. Creating, reading, and writing temporary files in the working directory is expected and required for accurate I/O benchmarking. Mocking the file system ruins the benchmark!
+- You MUST import from the repo normally using the actual file path provided.
+- If a function requires database connections or network I/O, create minimal mock data.
+- **CRITICAL**: If you mock an I/O bound external call, your mock MUST include realistic artificial latency (e.g., `time.sleep(0.05)`) so concurrency optimizations can demonstrate actual speedup.
+- **MOCK ATTRIBUTES**: If you use `unittest.mock.patch` or `MagicMock`, you MUST explicitly assign a `__name__` attribute to the mock object (e.g., `mock_func.__name__ = 'func'`) to prevent `AttributeError` during introspection.
+- **PREFER REAL CODE OVER MOCKING**: Do NOT aggressively mock internal target functions. Always prefer executing the actual repository code.
+- **FILE I/O IS FULLY ALLOWED**: The sandbox has a real filesystem. **Do NOT mock `open()`, `builtins.open`, or `fs`**. Creating, reading, and writing temporary files in the working directory is expected."""
 
-## Rules
+PROMPT_RULES = """## Rules
 
-- Do NOT include any memory measurement code. No tracemalloc, no memory_profiler,
-  no process.memoryUsage(). Memory is measured automatically by the runtime wrapper.
-- Focus ONLY on timing and correctness fingerprinting.
+- Do NOT include any memory measurement code. Memory is measured automatically by the runtime wrapper.
+- Focus ONLY on timing and correctness fingerprinting."""
 
-## Correctness Fingerprinting (REQUIRED)
+PROMPT_FINGERPRINT = """## Correctness Fingerprinting (REQUIRED)
 
-After timing, you MUST generate a `validation_fingerprint` to verify the function's output
-has not changed. This is critical for detecting when optimizations break functionality.
-
+After timing, you MUST generate a `validation_fingerprint` to verify the function's output:
 1. Before the timing loop, call the function ONCE with a fixed, deterministic input.
-2. Capture the return value (or the mutated state if the function returns void).
-3. Serialize the result into a stable string representation.
-   **IMPORTANT**: If the result is a large object (list/array/dict with >100 elements),
-   TRUNCATE or SAMPLE it before serializing to avoid blocking CPU time:
-   - For Python: `s = result[:100] if isinstance(result, (list, tuple)) else result;
-     serialized = json.dumps(s, sort_keys=True, default=str)[:10000]`
-   - For JavaScript: `let s = Array.isArray(result) ? result.slice(0, 100) : result;
-     let serialized = JSON.stringify(s).slice(0, 10000)`
-   This keeps fingerprinting under 1ms even for massive outputs.
-4. Hash the serialized string to produce a short fingerprint:
-   - For Python: `import hashlib; fingerprint = hashlib.sha256(serialized.encode()).hexdigest()[:16]`
-   - For JavaScript: use `require('crypto').createHash('sha256').update(serialized).digest('hex').slice(0, 16)`
-5. Include the fingerprint in the output JSON as `"validation_fingerprint": "<hex_string>"`.
+2. Serialize the result (truncate/sample if >100 elements) into a stable string representation.
+3. Hash it to produce a short fingerprint:
+   - Python: `import hashlib; fingerprint = hashlib.sha256(serialized.encode()).hexdigest()[:16]`
+   - JavaScript: `require('crypto').createHash('sha256').update(serialized).digest('hex').slice(0, 16)`
+4. Include the fingerprint in the output JSON as `"validation_fingerprint": "<hex_string>"`.
+5. Ensure DETERMINISM: Seed RNGs (random.seed(42), etc.) and mock Date/time."""
 
-DETERMINISM RULES:
-- If the function uses randomness, seed the RNG before the fingerprint call (e.g. Math.random seed, random.seed(42)).
-- If the function uses Date/time, mock it to a fixed value.
-- If the function reads from network/DB, use the same mock data.
-- The fingerprint MUST be identical across runs with the same code. If it is not deterministic, the system will incorrectly flag the optimization as broken.
+PROMPT_DCE = """## PREVENTING DEAD CODE ELIMINATION (CRITICAL)
 
-## PREVENTING DEAD CODE ELIMINATION (CRITICAL)
-
-JavaScript V8 and Python compilers aggressively optimize away function calls whose return
-values are never used. If you do NOT follow these rules, your benchmark will report 0.00ms
-because the engine literally deletes the code.
-
+Compilers aggressively optimize away function calls whose return values are never used.
 1. ALWAYS capture the return value of EVERY function call inside the timing loop.
-2. Accumulate results into a variable that PERSISTS across iterations (e.g. a checksum,
-   an XOR hash, or append to an array).
-3. AFTER the timing loop, PRINT or USE the accumulated result so the engine cannot
-   prove the computation is dead.
+2. Accumulate results into a CHEAP variable that PERSISTS across iterations (e.g. a checksum or length).
+3. AFTER the timing loop, PRINT or USE the accumulated result so the engine cannot prove the computation is dead.
 
 ### JavaScript anti-DCE pattern (REQUIRED):
 ```javascript
@@ -82,7 +54,6 @@ let _checksum = 0;
 const start = performance.now();
 for (let i = 0; i < iterations; i++) {
     const result = targetFunction(testData);
-    // Use a CHEAP accumulator — avoid JSON.stringify inside the loop!
     _checksum += (typeof result === 'number' ? result : (Array.isArray(result) ? result.length : 1));
 }
 const elapsed = performance.now() - start;
@@ -95,90 +66,61 @@ _checksum = 0
 start = time.perf_counter()
 for _ in range(iterations):
     result = target_function(test_data)
-    # Use a CHEAP accumulator — avoid str(result) or json.dumps inside the loop!
     _checksum += len(result) if hasattr(result, '__len__') else (result if isinstance(result, (int, float)) else 1)
 elapsed = time.perf_counter() - start
 assert _checksum >= 0, _checksum
-```
+```"""
 
-IMPORTANT: The anti-DCE accumulator MUST be cheap (O(1) per iteration). NEVER call
-`JSON.stringify`, `str()`, `json.dumps`, or `len(str(result))` inside the timing loop — these
-serialization calls can dominate execution time for functions returning large objects, making
-the benchmark measure serialization cost instead of the actual function.
+PROMPT_MOCK_DATA = """## NON-UNIFORM MOCK DATA (REQUIRED)
 
-## NON-UNIFORM MOCK DATA (REQUIRED)
+ALL generated test data MUST have high variance to avoid engine optimizations:
+- Seed a PRNG for reproducibility (random.seed(42)).
+- For numeric arrays: generate values with `random.randint` or LCG formulas. NEVER use constant-fill patterns.
+- For objects/dicts: use varied keys and values."""
 
-Runtime engines (V8, CPython) aggressively optimize arrays filled with identical values.
-To capture real-world performance, ALL generated test data MUST have high variance:
+PROMPT_SCALING = """## DYNAMIC ITERATION SCALING (REQUIRED)
 
-- Seed a PRNG for reproducibility (Python: `random.seed(42)`, JS: use a simple LCG or `seedrandom`).
-- For numeric arrays: generate values with `(i * 2654435761) % N` or `random.randint(0, N)`.
-  NEVER use `[0] * N`, `Array(N).fill(0)`, or any constant-fill pattern.
-- For string arrays: vary lengths and characters, e.g. `chr(65 + i % 26) * (i % 20 + 1)`.
-- For dicts/objects: use varied keys AND values; do not repeat identical entries.
-- For nested structures: vary inner sizes, not just the outer container.
-
-Bad  (uniform): `data = [1] * 10000`
-Good (varied):  `random.seed(42); data = [random.randint(0, 100000) for _ in range(10000)]`
-
-Bad  (uniform): `const data = Array(10000).fill({key: "a", val: 1})`
-Good (varied):  `const data = Array.from({length: 10000}, (_, i) => ({key: "k" + ((i * 2654435761) >>> 0) % 10000, val: i * 7 % 9973}))`
-
-## DYNAMIC ITERATION SCALING (REQUIRED)
-
-Do NOT hardcode the number of iterations. Use a dynamic formula that targets ~4 seconds of total timing:
-
+Do NOT hardcode the number of iterations. Target ~2 seconds of total timing:
 1. Run the function ONCE as a warmup and measure `single_call_ms`.
-2. Compute iterations dynamically:
-   - Python:  `iterations = max(5, int(4000 / single_call_ms))`
-   - JavaScript:  `const iterations = Math.max(5, Math.floor(4000 / single_call_ms))`
-3. This automatically adapts: fast functions get many iterations, slow ones get few.
-4. Ensure total estimated runtime stays heavily under 10 seconds.
-5. The reported avg_time_ms MUST be > 0.001. If it rounds to 0, increase input size.
+2. Compute iterations: `iterations = max(5, int(2000 / single_call_ms))`.
+3. Total estimated runtime MUST stay heavily under 10 seconds."""
 
-## INPUT SIZE — COMPLEXITY-AWARE BOUNDS (CRITICAL)
+PROMPT_INPUT_SIZE = """## INPUT SIZE — TIMEOUT SAFETY (CRITICAL)
 
-Choose input sizes based on the algorithmic complexity of the function being benchmarked.
-The script runs under a hard 15-second timeout, so quadratic or worse algorithms with large
-inputs will crash before any iterations run.
+The sandbox has a 30-second hard timeout. Algorithmic complexity determines N:
+- **O(1) / O(log n)**: N = 20,000 - 50,000.
+- **O(n) / O(n log n)**: N = 5,000 - 10,000.
+- **O(n²)** (Nested loops, bubble sort, etc.): **N = 300 - 500 MAXIMUM**.
+- **O(n³)** or worse: **N = 50 - 150 MAXIMUM**.
+- **String operations**: Max 5,000 characters.
+- When in doubt, start with N = 400."""
 
-### O(1) / O(log n) — constant or logarithmic:
-- N = 50,000+ is fine. Prefer 50,000.
+PROMPT_OUTPUT = """## Output Format
 
-### O(n) / O(n log n) — linear or linearithmic:
-- N = 10,000 minimum, 50,000 preferred.
-
-### O(n²) — quadratic (nested loops, bubble sort, etc.):
-- N = 500–1,000 MAXIMUM. Values above 1,000 will exceed the timeout.
-- Prefer N = 700 as a balance between measurability and safety.
-
-### O(n³) or worse — cubic / exponential:
-- N = 100–300 MAXIMUM. Keep it small enough for a single call to finish in < 1 second.
-
-### General rules:
-- For map/dict lookups (O(1) amortised): N = 50,000+ entries.
-- For I/O-bound code: simulate at least 20 sequential operations.
-- For string operations on linear algorithms: use strings of 10,000+ characters.
-- NEVER use trivially small inputs (N < 50). Small inputs hide algorithmic improvements
-  behind constant-factor overhead and produce misleading benchmark results.
-- When in doubt about the complexity, start with N = 1,000 and verify the warmup call
-  finishes well under 2 seconds. If it takes longer, reduce N.
-
-## Output Format
-
-For Python: Use time.perf_counter() or timeit to measure execution time. Write scripts that
-import the target functions from the repo, set up realistic-sized test data (see INPUT SIZE above),
-and output a single JSON object on the LAST line of stdout:
+Output a single JSON object on the LAST line of stdout:
 {"function": "name", "avg_time_ms": 123.4, "iterations": 100, "validation_fingerprint": "abcd1234"}
 
-For JavaScript/TypeScript: Use require() (CommonJS) NOT import (ESM). The sandbox runs
-scripts with plain `node` in CommonJS mode. Use `const { performance } = require("perf_hooks")`
-for timing. Write scripts that require target functions from the repo, set up realistic-sized
-test data (see INPUT SIZE above), and output a single JSON object on the LAST line of stdout:
-{"function": "name", "avg_time_ms": 123.4, "iterations": 100, "validation_fingerprint": "abcd1234"}
+For JS: use `require` (CommonJS), not `import` (ESM). The sandbox runs scripts with plain `node`."""
 
-Any debug/progress output must go to stderr or earlier stdout lines — the LAST line of stdout
-must be the JSON result object and nothing else."""
+BENCHMARK_PROMPT = f"""You are a benchmarking expert. Given an analysis of performance bottlenecks
+in a codebase, generate a separate self-contained profiling script for EACH identified hotspot.
+
+{PROMPT_SANDBOX}
+
+{PROMPT_RULES}
+
+{PROMPT_FINGERPRINT}
+
+{PROMPT_DCE}
+
+{PROMPT_MOCK_DATA}
+
+{PROMPT_SCALING}
+
+{PROMPT_INPUT_SIZE}
+
+{PROMPT_OUTPUT}
+"""
 
 
 async def _generate_single_benchmark(

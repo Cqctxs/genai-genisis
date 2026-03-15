@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { listRepos, startAnalysis, fetchPreviewGraph, streamJob, type GitHubRepo, type GraphData } from "@/lib/api";
 import { Search, ArrowRight, Zap, Scale, HardDrive, ScanSearch, FastForward } from "lucide-react";
+import { GlobalFooterPill } from "@/components/global-footer-pill";
 
 const GITHUB_URL_REGEX = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
 
@@ -335,15 +336,6 @@ export default function TestPage() {
 
   const isRunning = phase !== "idle" && phase !== "error" && phase !== "complete";
 
-  const statusText =
-    phase === "idle"
-      ? "ready · configure and launch analysis"
-      : phase === "error"
-        ? "error encountered"
-        : phase === "complete"
-          ? "analysis complete"
-          : `${phase}...`;
-
   if (status === "loading") {
     return (
       <div className="h-screen bg-light p-3 sm:p-4 flex flex-col">
@@ -363,8 +355,8 @@ export default function TestPage() {
             href="/"
             className="flex items-center gap-2 hover:opacity-80 transition-opacity text-3xl"
           >
-            <img src="/images/benchy_light.svg" alt="Benchy" className="h-8" />
-            <span className="font-serif">Benchy</span>
+            <div className="h-8 w-8 bg-linear-to-b from-light via-light/90 to-light/50" style={{ maskImage: 'url(/images/benchy_light.svg)', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center', WebkitMaskImage: 'url(/images/benchy_light.svg)', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center' }} />
+            <span className="font-serif font-bold pl-1 pb-1 translate-y-1 bg-linear-to-b from-light via-light/90 to-light/50 bg-clip-text text-transparent">Benchy</span>
           </a>
           <div className="flex items-center gap-6">
             <span className="text-xs font-mono text-light/40">{session?.user?.name}</span>
@@ -777,28 +769,7 @@ export default function TestPage() {
           </div>
         </div>
 
-        {/* Bottom status bar */}
-        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center justify-between z-20 bg-dark/80 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                phase === "idle"
-                  ? "bg-accent-green"
-                  : phase === "error"
-                    ? "bg-accent-red"
-                    : phase === "complete"
-                      ? "bg-accent-green"
-                      : "bg-accent-orange animate-pulse"
-              }`}
-            />
-            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
-            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
-          </div>
-          <p className="font-mono text-[11px] text-light/30">
-            {"● "}{statusText}
-          </p>
-          <span className="w-2 h-2 rounded-full bg-light/20" />
-        </div>
+        <GlobalFooterPill />
       </div>
     </div>
   );

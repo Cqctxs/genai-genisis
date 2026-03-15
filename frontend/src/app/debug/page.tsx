@@ -19,6 +19,7 @@ import {
   CardFooter,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { GlobalFooterPill } from "@/components/global-footer-pill";
 import type { ComparisonReport, GraphData } from "@/lib/api";
 
 const FAKE_MESSAGES = [
@@ -768,17 +769,7 @@ export default function DebugPage() {
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-accent-purple" />
-            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
-            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
-          </div>
-          <p className="font-mono text-[11px] text-light/30">
-            ● debug mode · all components rendered with synthetic data
-          </p>
-          <span className="w-2 h-2 rounded-full bg-light/20" />
-        </div>
+        <GlobalFooterPill />
       </div>
     </div>
   );

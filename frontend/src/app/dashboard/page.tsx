@@ -7,6 +7,7 @@ import { RepoInput } from "@/components/repo-input";
 import { ProgressStepper } from "@/components/progress-stepper";
 import { startAnalysis, streamJob } from "@/lib/api";
 import { toast } from "sonner";
+import { GlobalFooterPill } from "@/components/global-footer-pill";
 
 type Phase =
   | "idle"
@@ -118,13 +119,6 @@ export default function DashboardPage() {
     setError(null);
   };
 
-  const statusText =
-    phase === "idle"
-      ? "● [✓] ready · select a repository"
-      : phase === "error"
-        ? "● [✗] error encountered"
-        : `● [◎] ${phase}…`;
-
   if (status === "loading") {
     return (
       <div className="h-screen bg-light p-3 sm:p-4 flex flex-col">
@@ -143,8 +137,8 @@ export default function DashboardPage() {
       <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden">
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
           <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity text-3xl">
-            <img src="/images/benchy_light.svg" alt="Benchy" className="h-8"/>
-            <span className="font-serif">Benchy</span>
+            <div className="h-8 w-8 bg-linear-to-b from-light via-light/90 to-light/50" style={{ maskImage: 'url(/images/benchy_light.svg)', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center', WebkitMaskImage: 'url(/images/benchy_light.svg)', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center' }} />
+            <span className="font-serif font-bold pl-1 pb-1 translate-y-1 bg-linear-to-b from-light via-light/90 to-light/50 bg-clip-text text-transparent">Benchy</span>
           </a>
           <div className="flex items-center gap-6">
             <span className="text-xs font-mono text-light/40">
@@ -202,23 +196,8 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-
-        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${phase === "idle"
-                  ? "bg-accent-green"
-                  : phase === "error"
-                    ? "bg-accent-red"
-                    : "bg-accent-orange animate-pulse"
-                }`}
-            />
-            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
-            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
-          </div>
-          <p className="font-mono text-[11px] text-light/30">{statusText}</p>
-          <span className="w-2 h-2 rounded-full bg-light/20" />
-        </div>
+        
+        <GlobalFooterPill />
       </div>
     </div>
   );

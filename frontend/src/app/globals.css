@@ -126,6 +126,15 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@keyframes scroll-bg {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+.animate-scroll-bg {
+  animation: scroll-bg 1.5s linear infinite;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
