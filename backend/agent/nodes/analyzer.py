@@ -77,7 +77,7 @@ CRITICAL SANDBOX CONSTRAINTS:
 - If a dependency is NOT in the pre-installed list above, you MUST mock/stub it.
   Do NOT run `npm install`, `pip install`, or any package manager commands in the script.
   Doing so will crash the container.
-- Copy the target function's source code directly into the benchmark script.
+- You MUST import the target function from the repo using the exact file path provided in the "File:" section. For instance, if the file is `advanced_demo/data_generator.py`, use `from advanced_demo.data_generator import function_name` in Python or `require('./advanced_demo/data_generator')` in JS. Do NOT use fake names like `from hotspot_1`.
 - Create mock/stub data instead of importing real modules when measuring pure logic.
   CRITICAL JSON & ESCAPING CONSTRAINTS:
   - Do NOT generate ANY docstrings or comments inside the Python/JS code.
