@@ -455,8 +455,8 @@ async def chunk_analyze_node(state: AgentState) -> dict:
     for f in file_tree:
         try:
             repo_files[f] = read_file(repo_path, f)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("repo_file_read_failed", file=f, error=str(e))
 
     for manifest in ("requirements.txt", "package.json"):
         if manifest not in repo_files:
