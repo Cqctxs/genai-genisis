@@ -1,4 +1,4 @@
-# CodeMark - AI Performance Optimizer
+# Benchy - AI Performance Optimizer
 
 A production-ready developer tool that analyzes, benchmarks, and optimizes your code using AI. Connect a GitHub repository and get a comprehensive performance report with a CodeMark score.
 
