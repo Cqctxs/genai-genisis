@@ -11,7 +11,7 @@ from agent.nodes.analyzer import chunk_analyze_node, parse_ast_node, triage_node
 from agent.nodes.optimizer import optimize_node
 from agent.nodes.reporter import report_node
 from agent.nodes.runner import run_benchmarks_node
-from agent.nodes.visualizer import visualize_node
+from agent.nodes.visualizer import visualize_node, visualize_preview_node
 from agent.state import AgentState
 from services.github_pr_service import create_optimization_pr
 from services.github_service import cleanup_repo, clone_repo
@@ -395,6 +395,103 @@ async def run_optimization_pipeline(
 
     total_elapsed = time.monotonic() - pipeline_start
     log.info("pipeline_complete", total_time_s=round(total_elapsed, 1))
+
+    return result
+
+
+@rt.function_node
+async def preview_pipeline(repo_url: str, github_token: str) -> dict:
+    """Lightweight pipeline — clone, parse, triage, and generate a preview graph.
+
+    No benchmarks, no optimization.  Returns only graph_data.
+    """
+    state: AgentState = {
+        "repo_url": repo_url,
+        "github_token": github_token,
+        "messages": [],
+    }
+
+    # ── Clone ────────────────────────────────────────────────────────────
+    await rt.broadcast("Cloning repository...")
+    log.info("preview_clone_start", repo_url=repo_url)
+    repo_path = await clone_repo(repo_url, github_token)
+    log.info("preview_clone_complete", repo_path=repo_path)
+    state["repo_path"] = repo_path
+    state["messages"].append("Repository cloned successfully")
+
+    # ── Parse AST ────────────────────────────────────────────────────────
+    await rt.broadcast("Parsing codebase AST...")
+    state.update(await parse_ast_node(state))
+    log.info(
+        "preview_parse_complete",
+        functions=len(state.get("ast_map", {}).get("functions", [])),
+        files=len(state.get("file_tree", [])),
+    )
+
+    # ── Triage ───────────────────────────────────────────────────────────
+    await rt.broadcast("Triaging codebase for hotspots...")
+    state.update(await triage_node(state))
+    log.info("preview_triage_complete")
+
+    # ── Preview visualisation ────────────────────────────────────────────
+    await rt.broadcast("Generating preview graph...")
+    viz_result = await visualize_preview_node(state)
+    state.update(viz_result)
+    log.info(
+        "preview_visualize_complete",
+        nodes=len(state.get("graph_data", {}).get("nodes", [])),
+        edges=len(state.get("graph_data", {}).get("edges", [])),
+    )
+
+    # ── Save graph to JSON file ──────────────────────────────────────────
+    graph_data = state.get("graph_data", {})
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+    os.makedirs(output_dir, exist_ok=True)
+    graph_output_path = os.path.join(output_dir, "preview_graph.json")
+    with open(graph_output_path, "w", encoding="utf-8") as f:
+        json.dump(graph_data, f, indent=2)
+    log.info("preview_graph_saved", path=graph_output_path)
+
+    # ── Cleanup ──────────────────────────────────────────────────────────
+    if repo_path:
+        await asyncio.to_thread(cleanup_repo, repo_path)
+        log.info("preview_cleanup_complete", repo_path=repo_path)
+
+    return {"graph_data": graph_data}
+
+
+async def run_preview_pipeline(
+    repo_url: str,
+    github_token: str,
+    queue: asyncio.Queue | None = None,
+) -> dict:
+    """Public entry point for the preview (graph-only) pipeline."""
+    log.info("preview_pipeline_start", repo_url=repo_url)
+    pipeline_start = time.monotonic()
+
+    broadcast_cb = None  # type: ignore[assignment]
+    if queue:
+
+        async def broadcast_cb(msg: str) -> None:
+            await queue.put(
+                {
+                    "event": "progress",
+                    "data": json.dumps({"node": "pipeline", "message": msg}),
+                }
+            )
+
+    flow = rt.Flow(
+        "CodeMark Preview",
+        entry_point=preview_pipeline,
+        broadcast_callback=broadcast_cb,
+        save_state=True,
+        timeout=300.0,
+    )
+
+    result = await flow.ainvoke(repo_url, github_token)
+
+    total_elapsed = time.monotonic() - pipeline_start
+    log.info("preview_pipeline_complete", total_time_s=round(total_elapsed, 1))
 
     return result
 

@@ -1,0 +1,149 @@
+{
+  "nodes": [
+    {
+      "id": "benchmark_main",
+      "label": "Run Benchmark",
+      "file": "advanced_demo/benchmark.py",
+      "node_type": "function",
+      "inputs": null,
+      "outputs": null,
+      "metadata": null,
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "medium"
+    },
+    {
+      "id": "benchmark_fetch",
+      "label": "Fetch Dashboard API",
+      "file": "advanced_demo/benchmark.py",
+      "node_type": "api",
+      "inputs": {
+        "session": "aiohttp.ClientSession",
+        "user_id": "str"
+      },
+      "outputs": {
+        "response": "JSON data"
+      },
+      "metadata": {
+        "endpoint": "/user/{user_id}/dashboard",
+        "method": "GET"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "high"
+    },
+    {
+      "id": "server_user_dashboard",
+      "label": "User Dashboard Endpoint",
+      "file": "advanced_demo/server.py",
+      "node_type": "api",
+      "inputs": {
+        "user_id": "str",
+        "request": "Request"
+      },
+      "outputs": {
+        "dashboard_data": "dict"
+      },
+      "metadata": {
+        "endpoint": "/user/{user_id}/dashboard",
+        "method": "GET"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "high"
+    },
+    {
+      "id": "db_get_user",
+      "label": "Get User (JSON DB)",
+      "file": "advanced_demo/database.py",
+      "node_type": "db",
+      "inputs": {
+        "user_id": "str"
+      },
+      "outputs": {
+        "user": "dict"
+      },
+      "metadata": {
+        "operation": "SELECT",
+        "table": "users.json"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "critical"
+    },
+    {
+      "id": "db_get_transaction",
+      "label": "Get Transaction (JSON DB)",
+      "file": "advanced_demo/database.py",
+      "node_type": "db",
+      "inputs": {
+        "tx_id": "str"
+      },
+      "outputs": {
+        "transaction": "dict"
+      },
+      "metadata": {
+        "operation": "SELECT",
+        "table": "transactions.json"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "critical"
+    },
+    {
+      "id": "gen_db",
+      "label": "Generate Mock DB",
+      "file": "advanced_demo/data_generator.py",
+      "node_type": "db",
+      "inputs": {
+        "filename": "str"
+      },
+      "outputs": null,
+      "metadata": {
+        "operation": "WRITE",
+        "table": "JSON File"
+      },
+      "avg_time_ms": null,
+      "memory_mb": null,
+      "severity": "medium"
+    }
+  ],
+  "edges": [
+    {
+      "source": "benchmark_main",
+      "target": "benchmark_fetch",
+      "label": "",
+      "edge_type": "call"
+    },
+    {
+      "source": "benchmark_fetch",
+      "target": "benchmark_main",
+      "label": "for each user in batch",
+      "edge_type": "loop_back"
+    },
+    {
+      "source": "benchmark_fetch",
+      "target": "server_user_dashboard",
+      "label": "HTTP GET",
+      "edge_type": "call"
+    },
+    {
+      "source": "server_user_dashboard",
+      "target": "db_get_user",
+      "label": "",
+      "edge_type": "call"
+    },
+    {
+      "source": "server_user_dashboard",
+      "target": "db_get_transaction",
+      "label": "",
+      "edge_type": "call"
+    },
+    {
+      "source": "db_get_transaction",
+      "target": "server_user_dashboard",
+      "label": "for each transaction",
+      "edge_type": "loop_back"
+    }
+  ]
+}

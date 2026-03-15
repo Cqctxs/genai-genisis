@@ -101,6 +101,11 @@ class AnalyzeRequest(BaseModel):
     fast_mode: bool = False
 
 
+class GraphRequest(BaseModel):
+    repo_url: HttpUrl
+    github_token: str
+
+
 class AnalyzeLocalRequest(BaseModel):
     files: dict[str, str]
     language: str = "python"
@@ -220,6 +225,43 @@ async def get_results(job_id: str):
     result["pr_url"] = result.get("pr_url", "")
 
     return result
+
+
+@app.post("/api/graph", response_model=AnalyzeResponse)
+@limiter.limit("5/minute")
+async def generate_graph(request: Request, body: GraphRequest):
+    job_id = str(uuid.uuid4())
+    queue: asyncio.Queue = asyncio.Queue()
+    job_queues[job_id] = queue
+    jobs[job_id] = {"status": "pending", "result": None}
+
+    asyncio.create_task(
+        _run_preview_agent(job_id, str(body.repo_url), body.github_token, queue)
+    )
+
+    log.info("preview_job_created", job_id=job_id, repo_url=str(body.repo_url))
+    return AnalyzeResponse(job_id=job_id)
+
+
+async def _run_preview_agent(
+    job_id: str,
+    repo_url: str,
+    github_token: str,
+    queue: asyncio.Queue,
+):
+    from agent.graph import run_preview_pipeline
+
+    try:
+        jobs[job_id]["status"] = "running"
+        result = await run_preview_pipeline(repo_url, github_token, queue)
+        jobs[job_id]["status"] = "completed"
+        jobs[job_id]["result"] = result
+        await queue.put({"event": "complete", "data": result})
+    except Exception as e:
+        log.error("preview_agent_failed", job_id=job_id, error=str(e))
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = str(e)
+        await queue.put({"event": "error", "data": {"message": str(e)}})
 
 
 @app.post("/api/analyze-local", response_model=AnalyzeResponse)

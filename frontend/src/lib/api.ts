@@ -152,6 +152,27 @@ export async function startAnalysis(
   return res.json();
 }
 
+export async function fetchPreviewGraph(
+  repoUrl: string,
+  githubToken: string,
+): Promise<AnalyzeResponse> {
+  const res = await fetch(`${API_URL}/api/graph`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      repo_url: repoUrl,
+      github_token: githubToken,
+    }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Request failed" }));
+    throw new Error(error.detail || "Failed to generate preview graph");
+  }
+
+  return res.json();
+}
+
 export function streamJob(
   jobId: string,
   onEvent: (event: { event: string; data: any }) => void,

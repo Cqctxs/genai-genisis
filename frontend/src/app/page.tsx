@@ -24,7 +24,7 @@ export default function LandingPage() {
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
           <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity text-3xl">
             <img src="/images/benchy_light.svg" alt="Benchy" className="h-8"/>
-            <span className="font-serif">Benchy</span>
+            <span className="font-serif font-bold">Benchy</span>
           </a>
           <div className="flex items-center gap-6">
             <a href="/debug" className="text-xs font-mono text-light/40 hover:text-light/70 transition-colors">
@@ -55,7 +55,7 @@ export default function LandingPage() {
             <div className="relative min-h-[calc(100vh-8rem)] flex items-center justify-center px-6 sm:px-10 py-12 pb-32">
               <div className="max-w-2xl text-center space-y-12">
                 <div className="space-y-8">
-                  <h1 className="font-serif sm:text-8xl text-7xl leading-[0.9] tracking-tight">
+                  <h1 className="font-serif font-bold sm:text-8xl text-7xl leading-[0.9] tracking-tight">
                     Benchy
                   </h1>
                   <p className="text-light/50 text-sm sm:text-base max-w-md mx-auto leading-relaxed">
@@ -104,7 +104,7 @@ export default function LandingPage() {
                 {/* How it Works section */}
                 <div className="space-y-12 pb-24 text-light/80">
                   <div className="text-center space-y-4">
-                    <h2 className="font-serif text-4xl sm:text-5xl">How it Works</h2>
+                    <h2 className="font-serif font-bold text-4xl sm:text-5xl">How it Works</h2>
                     <p className="font-mono text-xs text-light/40 uppercase tracking-widest">
                       The Benchy Architecture
                     </p>
@@ -113,8 +113,8 @@ export default function LandingPage() {
                   <div className="grid md:grid-cols-2 gap-12 sm:gap-16 max-w-4xl mx-auto items-start">
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-light/10 font-mono text-xs text-light">1</span>
-                        <h3 className="font-mono text-lg text-light">Job Submission</h3>
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-accent-blue/20 font-mono text-xs text-accent-blue">1</span>
+                        <h3 className="font-serif text-2xl font-bold text-accent-blue">Job Submission</h3>
                       </div>
                       <p className="text-sm text-light/60 leading-relaxed">
                         Submit a GitHub URL via the dashboard, or trigger Benchy right from the VS Code extension. The extension packages up local files (respecting `.gitignore`) and sends them to the FastAPI backend.
@@ -123,8 +123,8 @@ export default function LandingPage() {
 
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-light/10 font-mono text-xs text-light">2</span>
-                        <h3 className="font-mono text-lg text-light">Agentic Pipeline (Powered by Railtracks)</h3>
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-accent-purple/20 font-mono text-xs text-accent-purple">2</span>
+                        <h3 className="font-serif text-2xl font-bold text-accent-purple">Agentic Pipeline (Powered by Railtracks)</h3>
                       </div>
                       <p className="text-sm text-light/60 leading-relaxed">
                         Built on top of Railtracks by Railtown, the overarching AI agent converts source code into an Abstract Syntax Tree (AST) to map its structure. It then executes the code dynamically with injected profiling tools to identify actual algorithmic bottlenecks.
@@ -133,8 +133,8 @@ export default function LandingPage() {
 
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-light/10 font-mono text-xs text-light">3</span>
-                        <h3 className="font-mono text-lg text-light">Optimization</h3>
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-accent-green/20 font-mono text-xs text-accent-green">3</span>
+                        <h3 className="font-serif text-2xl font-bold text-accent-green">Optimization</h3>
                       </div>
                       <p className="text-sm text-light/60 leading-relaxed">
                         Using real runtime data and flame graphs from the sandbox environment, Gemini rewrites the slow functions. The code is re-run and verified to ensure exact functionality while running significantly faster.
@@ -143,8 +143,8 @@ export default function LandingPage() {
 
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-light/10 font-mono text-xs text-light">4</span>
-                        <h3 className="font-mono text-lg text-light">Code Delivery</h3>
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-accent-orange/20 font-mono text-xs text-accent-orange">4</span>
+                        <h3 className="font-serif text-2xl font-bold text-accent-orange">Code Delivery</h3>
                       </div>
                       <p className="text-sm text-light/60 leading-relaxed">
                         Live telemetry streams the execution directly to your browser. Once finalized, radar charts compare the baseline to the optimized code, rendering a side-by-side IDE-style diff that you can instantly apply back into your IDE.

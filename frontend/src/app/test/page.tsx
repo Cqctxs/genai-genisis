@@ -4,12 +4,12 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { PerformanceGraph } from "@/components/performance-graph";
-import { FAKE_GRAPH_DATA } from "../debug/page";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { listRepos, startAnalysis, streamJob, type GitHubRepo } from "@/lib/api";
+import { listRepos, startAnalysis, fetchPreviewGraph, streamJob, type GitHubRepo, type GraphData } from "@/lib/api";
 import { Search, ArrowRight, Zap, Scale, HardDrive, ScanSearch, FastForward } from "lucide-react";
 
 const GITHUB_URL_REGEX = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
@@ -147,6 +147,8 @@ export default function TestPage() {
   const [currentView, setCurrentView] = useState<ViewState>("repo-select");
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [currentMessage, setCurrentMessage] = useState("");
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   // panelCollapsed is true when analysis is running
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   // userHiddenPanel allows the user to manually hide the panel to view the graph
@@ -188,6 +190,8 @@ export default function TestPage() {
 
   // Build graph nodes/edges with phase-based styling
 
+  const totalNodes = graphData?.nodes.length ?? 0;
+
   const handleNodeClick = useCallback((id: string) => {
     if (currentView !== "graph-config") return;
     setSelectedNodeIds((prev) =>
@@ -195,20 +199,60 @@ export default function TestPage() {
     );
   }, [currentView]);
 
-  const handleGenerateFlowchart = useCallback((targetUrl: string) => {
-    // Mock parsing step transition
-    setCurrentView("graph-config");
-    setSelectedNodeIds(FAKE_GRAPH_DATA.nodes.map(n => n.id));
-    setPanelCollapsed(false);
-  }, []);
+  const handleGenerateFlowchart = useCallback(async (targetUrl: string) => {
+    if (!accessToken) return;
+    setPreviewLoading(true);
+    setCurrentMessage("Starting graph generation...");
+    setPhase("analyzing");
+
+    try {
+      const { job_id } = await fetchPreviewGraph(targetUrl, accessToken);
+
+      streamJob(
+        job_id,
+        (event) => {
+          if (event.event === "progress" && event.data) {
+            const msg = typeof event.data === "string" ? event.data : event.data.message;
+            if (msg) setCurrentMessage(msg);
+          }
+          if (event.event === "complete" && event.data) {
+            const result = event.data;
+            const gd = result.graph_data;
+            if (gd) {
+              setGraphData(gd);
+              setSelectedNodeIds(gd.nodes.map((n: any) => n.id));
+              setCurrentView("graph-config");
+              setPanelCollapsed(false);
+            }
+            setPhase("idle");
+            setPreviewLoading(false);
+            setCurrentMessage("");
+          }
+        },
+        (err) => {
+          setPhase("error");
+          setCurrentMessage(err.message);
+          setPreviewLoading(false);
+        },
+        () => {
+          // onComplete (stream closed) — state already set above
+        },
+      );
+    } catch (err: any) {
+      setPhase("error");
+      setCurrentMessage(err.message || "Failed to generate graph");
+      setPreviewLoading(false);
+    }
+  }, [accessToken]);
 
   const handleBrowseAnalyze = () => {
-    if (!selectedRepo) return;
+    if (!selectedRepo || previewLoading) return;
     handleGenerateFlowchart(selectedRepo.html_url);
   };
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (previewLoading) return;
     const trimmed = url.trim().replace(/\/+$/, "");
     if (!GITHUB_URL_REGEX.test(trimmed)) {
       setUrlError("Please enter a valid GitHub repository URL");
@@ -283,6 +327,10 @@ export default function TestPage() {
     setPhase("idle");
     setCurrentMessage("");
     setPanelCollapsed(false);
+    setCurrentView("repo-select");
+    setGraphData(null);
+    setSelectedNodeIds([]);
+    setPreviewLoading(false);
   };
 
   const isRunning = phase !== "idle" && phase !== "error" && phase !== "complete";
@@ -333,12 +381,23 @@ export default function TestPage() {
         <div className={`absolute inset-0 z-0 transition-opacity duration-700 pointer-events-auto ${
           currentView === 'repo-select' ? 'opacity-15 blur-sm' : 'opacity-100'
         }`} style={{ top: "57px" }}>
-          <PerformanceGraph 
-            graphData={FAKE_GRAPH_DATA} 
-            variant="fullscreen" 
-            selectedNodeIds={selectedNodeIds}
-            onNodeClick={handleNodeClick}
-          />
+          {graphData ? (
+            <PerformanceGraph
+              graphData={graphData}
+              variant="fullscreen"
+              selectedNodeIds={selectedNodeIds}
+              onNodeClick={handleNodeClick}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              {previewLoading && (
+                <div className="text-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-accent-blue/30 border-t-accent-blue rounded-full animate-spin mx-auto" />
+                  <p className="text-xs text-light/40 font-mono">{currentMessage}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Foreground content */}
@@ -546,19 +605,19 @@ export default function TestPage() {
                   {repoMode === "browse" ? (
                     <Button
                       onClick={handleBrowseAnalyze}
-                      disabled={!selectedRepo}
+                      disabled={!selectedRepo || previewLoading}
                       className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6 gap-2"
                     >
-                      Generate Flowchart
+                      {previewLoading ? "Generating..." : "Generate Flowchart"}
                       <ArrowRight className="w-4 h-4" />
                     </Button>
                   ) : (
                     <Button
                       onClick={(e) => handleUrlSubmit(e as any)}
-                      disabled={!url.trim()}
+                      disabled={!url.trim() || previewLoading}
                       className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6 gap-2"
                     >
-                      Generate Flowchart
+                      {previewLoading ? "Generating..." : "Generate Flowchart"}
                       <ArrowRight className="w-4 h-4" />
                     </Button>
                   )}
@@ -586,22 +645,22 @@ export default function TestPage() {
                       Target Nodes
                     </label>
                     <span className="text-[10px] font-mono text-light/40">
-                      {selectedNodeIds.length} / {FAKE_GRAPH_DATA.nodes.length} Selected
+                      {selectedNodeIds.length} / {totalNodes} Selected
                     </span>
                   </div>
-                  
+
                   <div className="flex items-center gap-3 px-3 py-2.5 bg-light/5 rounded-lg border border-light/5 hover:bg-light/10 transition-colors cursor-pointer"
                        onClick={() => {
-                         if (selectedNodeIds.length === FAKE_GRAPH_DATA.nodes.length) {
+                         if (selectedNodeIds.length === totalNodes) {
                            setSelectedNodeIds([]);
                          } else {
-                           setSelectedNodeIds(FAKE_GRAPH_DATA.nodes.map(n => n.id));
+                           setSelectedNodeIds(graphData?.nodes.map(n => n.id) ?? []);
                          }
                        }}>
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       id="selectAllNodes"
-                      checked={selectedNodeIds.length === FAKE_GRAPH_DATA.nodes.length && FAKE_GRAPH_DATA.nodes.length > 0}
+                      checked={selectedNodeIds.length === totalNodes && totalNodes > 0}
                       readOnly
                       className="w-4 h-4 rounded border-light/20 bg-dark/50 text-accent-blue focus:ring-accent-blue/30 focus:ring-offset-dark pointer-events-none"
                     />
@@ -674,8 +733,8 @@ export default function TestPage() {
                   className="bg-accent-blue hover:bg-accent-blue/80 text-light px-6 gap-2 w-full justify-between"
                 >
                   <span className="flex-1 text-center">
-                    {selectedNodeIds.length === FAKE_GRAPH_DATA.nodes.length 
-                      ? "Optimize All Modules" 
+                    {selectedNodeIds.length === totalNodes
+                      ? "Optimize All Modules"
                       : `Optimize ${selectedNodeIds.length} Node${selectedNodeIds.length === 1 ? '' : 's'}`}
                   </span>
                   <ArrowRight className="w-4 h-4 right-0" />
