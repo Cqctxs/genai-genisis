@@ -116,7 +116,7 @@ const FAKE_MESSAGES = [
   },
 ];
 
-const FAKE_GRAPH_DATA: GraphData = {
+export const FAKE_GRAPH_DATA: GraphData = {
   nodes: [
     {
       id: "main",

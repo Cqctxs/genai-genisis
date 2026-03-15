@@ -624,15 +624,23 @@ const edgeTypes = {
 
 interface PerformanceGraphProps {
   graphData: GraphData | null;
+  variant?: "card" | "fullscreen";
 }
 
-export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
+export function PerformanceGraph({ graphData, variant = "card" }: PerformanceGraphProps) {
   const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (!graphData) return { nodes: [], edges: [] };
     return getLayoutedElements(graphData);
   }, [graphData]);
 
   if (!graphData) {
+    if (variant === "fullscreen") {
+      return (
+        <div className="w-full h-full relative flex items-center justify-center bg-dark/50">
+          <Skeleton className="w-1/2 h-1/2 rounded-lg opacity-20" />
+        </div>
+      );
+    }
     return (
       <Card className="bg-light/5">
         <CardHeader>
@@ -646,6 +654,25 @@ export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
           </div>
         </CardContent>
       </Card>
+    );
+  }
+
+  const flowProps = {
+    nodes,
+    edges,
+    nodeTypes,
+    edgeTypes,
+    fitView: true,
+    proOptions: { hideAttribution: true },
+  };
+
+  if (variant === "fullscreen") {
+    return (
+      <div className="w-full h-full relative">
+        <ReactFlow {...flowProps}>
+          <Background color="oklch(0.9569 0.0235 75.73 / 0.03)" gap={32} size={1} />
+        </ReactFlow>
+      </div>
     );
   }
 
@@ -666,14 +693,7 @@ export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
       </CardHeader>
       <CardContent>
         <div className="h-[500px] rounded-lg overflow-hidden bg-dark">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            fitView
-            proOptions={{ hideAttribution: true }}
-          >
+          <ReactFlow {...flowProps}>
           </ReactFlow>
         </div>
       </CardContent>
