@@ -53,7 +53,7 @@ export default function DashboardPage() {
   };
 
   const handleAnalyze = useCallback(
-    async (repoUrl: string, optimizationBias: string = "balanced") => {
+    async (repoUrl: string, optimizationBias: string = "balanced", fastMode: boolean = false) => {
       const token = (session as any)?.accessToken;
       if (!token) {
         toast.error("GitHub token not available. Please sign in again.");
@@ -65,7 +65,7 @@ export default function DashboardPage() {
       setError(null);
 
       try {
-        const { job_id } = await startAnalysis(repoUrl, token, optimizationBias);
+        const { job_id } = await startAnalysis(repoUrl, token, optimizationBias, fastMode);
 
         streamJob(
           job_id,
@@ -76,8 +76,17 @@ export default function DashboardPage() {
                 ...prev,
                 { node, message, timestamp: Date.now() },
               ]);
-              if (node && nodeToPhase[node]) {
-                setPhase(nodeToPhase[node]);
+              const msgLower = message.toLowerCase();
+              if (msgLower.includes("cloning") || msgLower.includes("parsing") || msgLower.includes("triaging")) {
+                setPhase("analyzing");
+              } else if (msgLower.includes("re-run") || msgLower.includes("re-optimizing")) {
+                setPhase("re-benchmarking");
+              } else if (msgLower.includes("streaming analysis") && msgLower.includes("benchmarks per chunk")) {
+                setPhase("benchmarking");
+              } else if (msgLower.includes("generating visualization") || msgLower.includes("optimizations")) {
+                setPhase("optimizing");
+              } else if (msgLower.includes("report") || msgLower.includes("pull request")) {
+                setPhase("scoring");
               }
             }
             if (event.event === "complete") {
@@ -113,8 +122,8 @@ export default function DashboardPage() {
     phase === "idle"
       ? "● [✓] ready · select a repository"
       : phase === "error"
-      ? "● [✗] error encountered"
-      : `● [◎] ${phase}…`;
+        ? "● [✗] error encountered"
+        : `● [◎] ${phase}…`;
 
   if (status === "loading") {
     return (
@@ -133,8 +142,9 @@ export default function DashboardPage() {
     <div className="h-screen bg-light p-3 sm:p-4 flex flex-col">
       <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden">
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
-          <a href="/" className="font-serif text-xl hover:text-light/80 transition-colors">
-            Benchy
+          <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity text-3xl">
+            <img src="/images/benchy_light.svg" alt="Benchy" className="h-8"/>
+            <span className="font-serif">Benchy</span>
           </a>
           <div className="flex items-center gap-6">
             <span className="text-xs font-mono text-light/40">
@@ -196,13 +206,12 @@ export default function DashboardPage() {
         <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                phase === "idle"
+              className={`w-2.5 h-2.5 rounded-full ${phase === "idle"
                   ? "bg-accent-green"
                   : phase === "error"
-                  ? "bg-accent-red"
-                  : "bg-accent-orange animate-pulse"
-              }`}
+                    ? "bg-accent-red"
+                    : "bg-accent-orange animate-pulse"
+                }`}
             />
             <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
             <span className="w-2.5 h-2.5 rounded-full bg-light/20" />

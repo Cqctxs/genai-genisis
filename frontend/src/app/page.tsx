@@ -3,6 +3,7 @@
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import AsciiBenchyScene from "@/components/benchy-ascii";
 
 export default function LandingPage() {
   const { data: session, status } = useSession();
@@ -20,7 +21,10 @@ export default function LandingPage() {
       <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden">
         {/* Top nav — pinned */}
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
-          <span className="font-serif text-xl">Benchy</span>
+          <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity text-3xl">
+            <img src="/images/benchy_light.svg" alt="Benchy" className="h-8"/>
+            <span className="font-serif">Benchy</span>
+          </a>
           <div className="flex items-center gap-6">
             <a href="/debug" className="text-xs font-mono text-light/40 hover:text-light/70 transition-colors">
               /debug
@@ -35,66 +39,132 @@ export default function LandingPage() {
           </div>
         </nav>
 
-        {/* Scrollable content area */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 sm:px-10 py-16 sm:py-24">
-          <div className="max-w-3xl space-y-16 sm:space-y-20">
-            {/* Logo + tagline */}
-            <div className="space-y-6">
-              <h1 className="font-serif text-6xl sm:text-8xl lg:text-9xl leading-[0.9] tracking-tight">
-                Benchy
-              </h1>
-              <p className="text-light/50 text-sm sm:text-base max-w-md leading-relaxed">
-                AI-powered performance analysis and optimization for your codebase.
-              </p>
+        {/* Content area with benchy background */}
+        <div className="flex-1 min-h-0 overflow-y-auto relative custom-scrollbar scroll-smooth">
+          {/* Background — spinning benchy */}
+          <div className="absolute top-0 left-0 w-full h-[calc(100vh-8rem)] pointer-events-none opacity-40">
+            <AsciiBenchyScene color="#faefe030" />
+          </div>
+
+          <div className="relative z-10 flex flex-col">
+            {/* Hero Section */}
+            <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center px-6 sm:px-10 py-12 pb-32">
+              <div className="max-w-2xl text-center space-y-12">
+                <div className="space-y-8">
+                  <h1 className="font-serif sm:text-8xl text-7xl leading-[0.9] tracking-tight">
+                    Benchy
+                  </h1>
+                  <p className="text-light/50 text-sm sm:text-base max-w-md mx-auto leading-relaxed">
+                    AI-powered performance analysis and optimization for your codebase.
+                  </p>
+                </div>
+
+                <div className="flex flex-col items-center gap-8">
+                  {/* Action Buttons */}
+                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <button
+                      onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
+                      disabled={status === "loading"}
+                      className="group flex items-center gap-3 font-mono text-sm bg-light text-dark px-6 py-3 rounded hover:bg-light/90 transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                      </svg>
+                      <span>Sign in with GitHub</span>
+                    </button>
+                    <a 
+                      href="#demo"
+                      className="font-mono text-sm text-light/70 hover:text-light transition-colors px-6 py-3 border border-light/20 rounded hover:border-light/40"
+                    >
+                      View a Demo
+                    </a>
+                  </div>
+                  
+                  {/* Supported Languages */}
+                  <div className="flex flex-col items-center gap-3">
+                    <p className="font-mono text-[11px] text-light/40 uppercase tracking-widest">Supported languages</p>
+                    <div className="flex items-center gap-6 text-light/30">
+                      <span className="font-mono text-sm hover:text-light/60 transition-colors cursor-default">Python</span>
+                      <span className="font-mono text-sm hover:text-light/60 transition-colors cursor-default">TypeScript</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Scroll Indicator */}
+                <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce opacity-30 hidden sm:block">
+                  <svg className="w-6 h-6 text-light" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                </div>
+              </div>
             </div>
 
-            <p className="text-base sm:text-lg leading-relaxed max-w-xl text-light/80">
-              Benchy is an autonomous AI agent that clones your repository,
-              parses the AST, identifies performance bottlenecks, and produces
-              optimized code — all inside a sandboxed environment.
-            </p>
+            {/* Visual Proof / Demo Section (Below Fold) */}
+            <div id="demo" className="w-full max-w-5xl mx-auto px-6 sm:px-10 py-16 pb-32">
+              <div className="flex flex-col gap-24">
+                
+                {/* Social Proof */}
+                <div className="text-center space-y-8">
+                  <p className="font-mono text-xs text-light/40 uppercase tracking-widest">
+                    Analyzing millions of lines of code for teams at
+                  </p>
+                  <div className="flex flex-wrap justify-center items-center gap-12 sm:gap-20 opacity-30 grayscale saturate-0 pointer-events-none select-none">
+                    <span className="font-serif text-xl sm:text-2xl tracking-tighter">[ Acme Corp ]</span>
+                    <span className="font-mono text-xl sm:text-2xl font-bold">STARTUP.IO</span>
+                    <span className="font-sans text-xl sm:text-2xl font-black italic">NextGen</span>
+                  </div>
+                </div>
 
-            <p className="text-base sm:text-lg leading-relaxed max-w-xl text-light/80">
-              Connect a GitHub repository. The agent analyzes call graphs,
-              generates benchmark harnesses, profiles execution in a cloud sandbox,
-              then rewrites hot paths with measurable speedups. Every optimization
-              is scored before and after.
-            </p>
+                {/* Code Diff Box */}
+                <div className="rounded-xl border border-light/10 bg-[#0a0a0a] overflow-hidden shadow-2xl">
+                  {/* Mock Window Header */}
+                  <div className="px-4 py-3 border-b border-light/10 flex items-center gap-2 bg-[#111]">
+                    <div className="flex gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full bg-light/20"></div>
+                      <div className="w-2.5 h-2.5 rounded-full bg-light/20"></div>
+                      <div className="w-2.5 h-2.5 rounded-full bg-light/20"></div>
+                    </div>
+                    <span className="ml-4 font-mono text-[10px] text-light/30">optimization_diff.rs</span>
+                  </div>
+                  {/* Split Screen Code */}
+                  <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-light/10">
+                    <div className="p-6 sm:p-8 font-mono text-xs sm:text-sm overflow-x-auto relative">
+                      <div className="mb-6"><span className="px-2 py-1 rounded bg-red-500/10 text-red-400 text-[10px] uppercase tracking-widest border border-red-500/20">O(n²) Before</span></div>
+                      <pre className="text-light/60 leading-relaxed">
+<span className="text-red-400/80">{"- for i in 0..items.len() {"}</span><br/>
+<span className="text-red-400/80">{"-     for j in 0..items.len() {"}</span><br/>
+<span className="text-light/40">{"-         if items[i] == items[j] { "}</span><br/>
+<span className="text-light/40">{"-             duplicates.push(items[i]);"}</span><br/>
+<span className="text-light/40">{"-         }"}</span><br/>
+<span className="text-red-400/80">{"-     }"}</span><br/>
+<span className="text-red-400/80">{"- }"}</span>
+                      </pre>
+                    </div>
+                    <div className="p-6 sm:p-8 font-mono text-xs sm:text-sm overflow-x-auto relative bg-accent-green/5">
+                      <div className="mb-6"><span className="px-2 py-1 rounded bg-accent-green/10 text-accent-green text-[10px] uppercase tracking-widest border border-accent-green/20">O(n) After</span></div>
+                      <pre className="text-light/80 leading-relaxed">
+<span className="text-accent-green">{"+ let mut seen = HashSet::new();"}</span><br/>
+<span className="text-accent-green">{"+ for item in items {"}</span><br/>
+<span className="text-light/60">{"+     if !seen.insert(item) {"}</span><br/>
+<span className="text-light/60">{"+         duplicates.push(item);"}</span><br/>
+<span className="text-light/60">{"+     }"}</span><br/>
+<span className="text-accent-green">{"+ }"}</span><br/>
+<span className="text-transparent">{"  "}</span>
+                      </pre>
+                    </div>
+                  </div>
+                </div>
 
-            <p className="text-base sm:text-lg leading-relaxed max-w-xl text-light/80">
-              Built with LangGraph for agent orchestration, Gemini for code
-              intelligence, and Modal for sandboxed execution. The full pipeline
-              runs in under two minutes for most repositories.
-            </p>
-
-            {/* CTA */}
-            <div className="space-y-4">
-              <button
-                onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
-                disabled={status === "loading"}
-                className="group flex items-center gap-3 font-mono text-sm text-light/70 hover:text-light transition-colors"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                </svg>
-                <span>Sign in with GitHub</span>
-                <span className="text-light/30 group-hover:text-light/60 transition-colors">→</span>
-              </button>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Terminal status bar — pinned */}
-        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-accent-green" />
-            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
-            <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
-          </div>
+        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center">
           <p className="font-mono text-[11px] text-light/30">
-            ● [✓] all systems nominal · welcome to benchy
+            [✓] all systems nominal · welcome to benchy
           </p>
-          <span className="w-2 h-2 rounded-full bg-light/20" />
         </div>
       </div>
     </div>

@@ -131,6 +131,7 @@ export async function startAnalysis(
   repoUrl: string,
   githubToken: string,
   optimizationBias: string = "balanced",
+  fastMode: boolean = false
 ): Promise<AnalyzeResponse> {
   const res = await fetch(`${API_URL}/api/analyze`, {
     method: "POST",
@@ -139,6 +140,7 @@ export async function startAnalysis(
       repo_url: repoUrl,
       github_token: githubToken,
       optimization_bias: optimizationBias,
+      fast_mode: fastMode,
     }),
   });
 

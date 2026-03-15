@@ -54,7 +54,7 @@ const BIAS_OPTIONS: { value: OptimizationBias; label: string; description: strin
 ];
 
 interface RepoInputProps {
-  onAnalyze: (repoUrl: string, optimizationBias: string) => void;
+  onAnalyze: (repoUrl: string, optimizationBias: string, fastMode: boolean) => void;
   isLoading: boolean;
   accessToken: string | null;
 }
@@ -70,6 +70,7 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
   const [url, setUrl] = useState("");
   const [urlError, setUrlError] = useState("");
   const [optimizationBias, setOptimizationBias] = useState<OptimizationBias>("balanced");
+  const [fastMode, setFastMode] = useState(false);
 
   useEffect(() => {
     if (!accessToken || fetchState !== "idle") return;
@@ -99,7 +100,7 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
 
   const handleBrowseAnalyze = () => {
     if (!selectedRepo) return;
-    onAnalyze(selectedRepo.html_url, optimizationBias);
+    onAnalyze(selectedRepo.html_url, optimizationBias, fastMode);
   };
 
   const handleUrlSubmit = (e: React.FormEvent) => {
@@ -110,7 +111,7 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
       return;
     }
     setUrlError("");
-    onAnalyze(trimmed, optimizationBias);
+    onAnalyze(trimmed, optimizationBias, fastMode);
   };
 
   return (
@@ -164,6 +165,41 @@ export function RepoInput({ onAnalyze, isLoading, accessToken }: RepoInputProps)
           </div>
           <p className="text-xs text-light/30">
             {BIAS_OPTIONS.find((o) => o.value === optimizationBias)?.description}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-mono text-light/50 uppercase tracking-wider">
+            Analysis Mode
+          </label>
+          <div className="flex items-center gap-1 bg-dark rounded-lg p-1 w-fit">
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={() => setFastMode(false)}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                !fastMode
+                  ? "bg-light/15 text-light"
+                  : "text-light/40 hover:text-light/70"
+              }`}
+            >
+              Detailed
+            </button>
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={() => setFastMode(true)}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                fastMode
+                  ? "bg-light/15 text-light"
+                  : "text-light/40 hover:text-light/70"
+              }`}
+            >
+              Fast (Skip Review)
+            </button>
+          </div>
+          <p className="text-xs text-light/30">
+            {fastMode ? "Skips the reviewer verification node for faster results." : "Uses an AI reviewer to double-check AI optimizations."}
           </p>
         </div>
 
