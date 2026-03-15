@@ -12,18 +12,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { listRepos, startAnalysis, streamJob, type GitHubRepo } from "@/lib/api";
 import { Search, ArrowRight, Zap, Scale, HardDrive, ScanSearch, FastForward } from "lucide-react";
 
-/* ------------------------------------------------------------------ */
-/*  Pipeline graph data (simplified visual nodes for the background)   */
-/* ------------------------------------------------------------------ */
-
-
-
-
-
-/* ------------------------------------------------------------------ */
-/*  Constants                                                          */
-/* ------------------------------------------------------------------ */
-
 const GITHUB_URL_REGEX = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
 
 const LANGUAGE_COLORS: Record<string, string> = {
