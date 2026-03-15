@@ -2,30 +2,14 @@
 
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import AsciiBenchyScene from "@/components/benchy-ascii";
-import * as htmlToImage from 'html-to-image';
+import { GlobalFooterPill } from "@/components/global-footer-pill";
 
 export default function LandingPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [showArrow, setShowArrow] = useState(true);
-  const logoRef = useRef<HTMLAnchorElement>(null);
-
-  const exportLogo = () => {
-    if (logoRef.current) {
-      htmlToImage.toSvg(logoRef.current)
-        .then((dataUrl) => {
-          const link = document.createElement('a');
-          link.download = 'benchy_logo.svg';
-          link.href = dataUrl;
-          link.click();
-        })
-        .catch((err) => {
-          console.error('oops, something went wrong!', err);
-        });
-    }
-  };
 
   useEffect(() => {
     if (session) {
@@ -40,13 +24,11 @@ export default function LandingPage() {
         {/* Top nav — pinned */}
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
           <a
-            ref={logoRef}
-            onClick={(e) => { e.preventDefault(); exportLogo(); }}
             href="/"
             className="flex items-center gap-2 hover:opacity-80 transition-opacity text-4xl"
           >
-            <div className="h-8 w-8 bg-linear-to-b from-light via-light/80 to-light/40" style={{ maskImage: 'url(/images/benchy_light.svg)', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center', WebkitMaskImage: 'url(/images/benchy_light.svg)', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center' }} />
-            <span className="font-serif font-bold bg-linear-to-b from-light via-light/80 to-light/40 bg-clip-text text-transparent">Benchy</span>
+            <div className="h-8 w-8 bg-linear-to-b from-light via-light/90 to-light/50" style={{ maskImage: 'url(/images/benchy_light.svg)', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center', WebkitMaskImage: 'url(/images/benchy_light.svg)', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center' }} />
+            <span className="font-serif font-bold pl-1 pb-1 translate-y-1 bg-linear-to-b from-light via-light/90 to-light/50 bg-clip-text text-transparent">Benchy</span>
           </a>
           <div className="flex items-center gap-6">
             <a
@@ -168,7 +150,7 @@ export default function LandingPage() {
                       <p className="text-base text-light/60 leading-relaxed">
                         Submit a <strong className="text-light/80">GitHub URL</strong> via the dashboard, or trigger Benchy
                         right from the <strong className="text-light/80">VS Code extension</strong>. The extension packages
-                        up local files (respecting <strong className="text-light/80">.gitignore</strong>) and sends them
+                        up local files (respecting .gitignore) and sends them
                         to the <strong className="text-light/80">FastAPI backend</strong>.
                       </p>
                     </div>
@@ -231,9 +213,11 @@ export default function LandingPage() {
           </div>
         </div>
 
+        <GlobalFooterPill />
+
         {/* Scroll Indicator - Always anchored to viewport bottom */}
         <div
-          className="absolute z-20 bottom-24 left-1/2 -translate-x-1/2 animate-bounce hidden sm:block transition-opacity duration-500 pointer-events-none"
+          className="absolute z-20 bottom-8 left-1/2 -translate-x-1/2 animate-bounce hidden sm:block transition-opacity duration-500 pointer-events-none"
           style={{ opacity: showArrow ? 0.4 : 0 }}
         >
           <svg
@@ -249,13 +233,6 @@ export default function LandingPage() {
               d="M19 14l-7 7m0 0l-7-7m7 7V3"
             />
           </svg>
-        </div>
-
-        {/* Terminal status bar — pinned */}
-        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center bg-dark z-20">
-          <p className="font-mono text-[11px] text-light/30">
-            [✓] all systems nominal · welcome to benchy
-          </p>
         </div>
       </div>
     </div>

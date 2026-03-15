@@ -3,6 +3,8 @@ import { Instrument_Sans, Fira_Code, Instrument_Serif } from "next/font/google";
 import localFont from "next/font/local";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
+import { AppStatusProvider } from "@/lib/app-status-context";
+import { GlobalFooterPill } from "@/components/global-footer-pill";
 import "./globals.css";
 
 const instrumentSans = Instrument_Sans({
@@ -38,8 +40,10 @@ export default function RootLayout({
       <body className="antialiased bg-dark text-light">
 
         <Providers>
-          {children}
-          <Toaster />
+          <AppStatusProvider>
+            {children}
+            <Toaster />
+          </AppStatusProvider>
         </Providers>
       </body>
     </html>
