@@ -349,6 +349,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
             unit="ms"
             isNegative={totalNewTime > totalOldTime}
             improvement={(() => {
+              if (totalOldTime === 0) return "0% faster";
               const pct = (1 - totalNewTime / totalOldTime) * 100;
               return pct >= 0
                 ? `${pct.toFixed(0)}% faster`
@@ -362,6 +363,7 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
             unit=" MB"
             isNegative={totalNewMem > totalOldMem}
             improvement={(() => {
+              if (totalOldMem === 0) return "0% memory";
               const pct = (1 - totalNewMem / totalOldMem) * 100;
               return pct >= 0
                 ? `-${pct.toFixed(0)}% memory`
