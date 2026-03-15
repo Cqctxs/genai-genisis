@@ -99,6 +99,8 @@ class AnalyzeRequest(BaseModel):
     github_token: str
     optimization_bias: str = "balanced"
     fast_mode: bool = False
+    selected_node_ids: list[str] | None = None
+    graph_data: dict | None = None
 
 
 class GraphRequest(BaseModel):
@@ -143,7 +145,9 @@ async def analyze_repo(request: Request, body: AnalyzeRequest):
 
     asyncio.create_task(
         _run_agent(
-            job_id, str(body.repo_url), body.github_token, queue, body.optimization_bias, body.fast_mode
+            job_id, str(body.repo_url), body.github_token, queue,
+            body.optimization_bias, body.fast_mode,
+            body.selected_node_ids, body.graph_data,
         )
     )
 
@@ -158,13 +162,16 @@ async def _run_agent(
     queue: asyncio.Queue,
     optimization_bias: str = "balanced",
     fast_mode: bool = False,
+    selected_node_ids: list[str] | None = None,
+    graph_data: dict | None = None,
 ):
     from agent.graph import run_optimization_pipeline
 
     try:
         jobs[job_id]["status"] = "running"
         result = await run_optimization_pipeline(
-            repo_url, github_token, queue, optimization_bias, fast_mode
+            repo_url, github_token, queue, optimization_bias, fast_mode,
+            selected_node_ids, graph_data,
         )
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["result"] = result

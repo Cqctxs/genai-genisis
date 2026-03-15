@@ -7,6 +7,8 @@ class AgentState(TypedDict, total=False):
     github_token: str
     optimization_bias: str
     fast_mode: bool
+    selected_node_ids: list[str] | None
+    preview_graph_data: dict[str, Any] | None
     file_tree: list[str]
     ast_map: dict[str, Any]
     analysis: dict[str, Any]

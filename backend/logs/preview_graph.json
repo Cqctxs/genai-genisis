@@ -1,9 +1,12 @@
 {
   "nodes": [
     {
-      "id": "benchmark_main",
-      "label": "Run Benchmark",
-      "file": "advanced_demo/benchmark.py",
+      "id": "main",
+      "label": "Orchestrate Pipeline",
+      "file": "demo/main.py",
+      "function_name": "main",
+      "line_start": 6,
+      "line_end": 28,
       "node_type": "function",
       "inputs": null,
       "outputs": null,
@@ -13,136 +16,150 @@
       "severity": "medium"
     },
     {
-      "id": "benchmark_fetch",
-      "label": "Fetch Dashboard API",
-      "file": "advanced_demo/benchmark.py",
-      "node_type": "api",
+      "id": "load_transactions",
+      "label": "Load Transactions (JSON)",
+      "file": "demo/data_parser.py",
+      "function_name": "load_transactions",
+      "line_start": 3,
+      "line_end": 10,
+      "node_type": "function",
       "inputs": {
-        "session": "aiohttp.ClientSession",
-        "user_id": "str"
+        "filepath": "string"
       },
       "outputs": {
-        "response": "JSON data"
+        "transactions": "list"
       },
       "metadata": {
-        "endpoint": "/user/{user_id}/dashboard",
-        "method": "GET"
+        "bottleneck": "Reads entire file into giant string memory buffer"
       },
       "avg_time_ms": null,
       "memory_mb": null,
       "severity": "high"
     },
     {
-      "id": "server_user_dashboard",
-      "label": "User Dashboard Endpoint",
-      "file": "advanced_demo/server.py",
-      "node_type": "api",
+      "id": "load_users",
+      "label": "Load Users (JSONL)",
+      "file": "demo/data_parser.py",
+      "function_name": "load_users",
+      "line_start": 12,
+      "line_end": 19,
+      "node_type": "function",
       "inputs": {
-        "user_id": "str",
-        "request": "Request"
+        "filepath": "string"
       },
       "outputs": {
-        "dashboard_data": "dict"
+        "users": "list"
       },
       "metadata": {
-        "endpoint": "/user/{user_id}/dashboard",
-        "method": "GET"
+        "bottleneck": "readlines() loads all lines into memory simultaneously"
       },
       "avg_time_ms": null,
       "memory_mb": null,
       "severity": "high"
     },
     {
-      "id": "db_get_user",
-      "label": "Get User (JSON DB)",
-      "file": "advanced_demo/database.py",
-      "node_type": "db",
+      "id": "enrich_transactions",
+      "label": "Enrich Transactions",
+      "file": "demo/processor.py",
+      "function_name": "enrich_transactions",
+      "line_start": 1,
+      "line_end": 20,
+      "node_type": "function",
       "inputs": {
-        "user_id": "str"
+        "users": "list",
+        "transactions": "list"
       },
       "outputs": {
-        "user": "dict"
+        "enriched": "list"
       },
       "metadata": {
-        "operation": "SELECT",
-        "table": "users.json"
+        "complexity": "O(N * M) nested lookup"
       },
       "avg_time_ms": null,
       "memory_mb": null,
       "severity": "critical"
     },
     {
-      "id": "db_get_transaction",
-      "label": "Get Transaction (JSON DB)",
-      "file": "advanced_demo/database.py",
-      "node_type": "db",
+      "id": "generate_report",
+      "label": "Generate Text Report",
+      "file": "demo/processor.py",
+      "function_name": "generate_report",
+      "line_start": 22,
+      "line_end": 36,
+      "node_type": "function",
       "inputs": {
-        "tx_id": "str"
+        "enriched_transactions": "list"
       },
       "outputs": {
-        "transaction": "dict"
+        "report": "string"
       },
       "metadata": {
-        "operation": "SELECT",
-        "table": "transactions.json"
+        "bottleneck": "Inefficient string concatenation in loop"
       },
       "avg_time_ms": null,
       "memory_mb": null,
-      "severity": "critical"
+      "severity": "high"
     },
     {
-      "id": "gen_db",
-      "label": "Generate Mock DB",
-      "file": "advanced_demo/data_generator.py",
-      "node_type": "db",
+      "id": "generate_mock_data",
+      "label": "Generate Mock Data",
+      "file": "demo/generator.py",
+      "function_name": "generate_mock_data",
+      "line_start": 5,
+      "line_end": 29,
+      "node_type": "function",
       "inputs": {
-        "filename": "str"
+        "num_transactions": "int",
+        "num_users": "int"
       },
       "outputs": null,
-      "metadata": {
-        "operation": "WRITE",
-        "table": "JSON File"
-      },
+      "metadata": null,
       "avg_time_ms": null,
       "memory_mb": null,
-      "severity": "medium"
+      "severity": "low"
     }
   ],
   "edges": [
     {
-      "source": "benchmark_main",
-      "target": "benchmark_fetch",
+      "source": "main",
+      "target": "load_transactions",
       "label": "",
       "edge_type": "call"
     },
     {
-      "source": "benchmark_fetch",
-      "target": "benchmark_main",
-      "label": "for each user in batch",
+      "source": "main",
+      "target": "load_users",
+      "label": "",
+      "edge_type": "call"
+    },
+    {
+      "source": "main",
+      "target": "enrich_transactions",
+      "label": "",
+      "edge_type": "call"
+    },
+    {
+      "source": "main",
+      "target": "generate_report",
+      "label": "",
+      "edge_type": "call"
+    },
+    {
+      "source": "enrich_transactions",
+      "target": "enrich_transactions",
+      "label": "O(N * M) join loop",
       "edge_type": "loop_back"
     },
     {
-      "source": "benchmark_fetch",
-      "target": "server_user_dashboard",
-      "label": "HTTP GET",
-      "edge_type": "call"
+      "source": "generate_report",
+      "target": "generate_report",
+      "label": "string concatenation loop",
+      "edge_type": "loop_back"
     },
     {
-      "source": "server_user_dashboard",
-      "target": "db_get_user",
-      "label": "",
-      "edge_type": "call"
-    },
-    {
-      "source": "server_user_dashboard",
-      "target": "db_get_transaction",
-      "label": "",
-      "edge_type": "call"
-    },
-    {
-      "source": "db_get_transaction",
-      "target": "server_user_dashboard",
-      "label": "for each transaction",
+      "source": "generate_mock_data",
+      "target": "generate_mock_data",
+      "label": "data generation loop",
       "edge_type": "loop_back"
     }
   ]

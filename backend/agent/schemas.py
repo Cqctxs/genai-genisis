@@ -116,6 +116,10 @@ class TriageChunk(BaseModel):
     reasoning: str = Field(
         description="Why these files are grouped and why this priority"
     )
+    target_functions: list[str] | None = Field(
+        default=None,
+        description="Specific function names to analyze within these files (None = analyze all)",
+    )
 
 
 class TriageResult(BaseModel):
@@ -163,6 +167,18 @@ class GraphNode(BaseModel):
     id: str
     label: str
     file: str
+    function_name: str | None = Field(
+        default=None,
+        description="Exact function/method name from the AST (used to map back to source code)",
+    )
+    line_start: int | None = Field(
+        default=None,
+        description="Starting line number of the function in its source file",
+    )
+    line_end: int | None = Field(
+        default=None,
+        description="Ending line number of the function in its source file",
+    )
     node_type: str = Field(
         default="function",
         description='One of: "api", "llm", "db", "condition", "function"',

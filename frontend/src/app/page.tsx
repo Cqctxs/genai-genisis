@@ -2,13 +2,30 @@
 
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import AsciiBenchyScene from "@/components/benchy-ascii";
+import * as htmlToImage from 'html-to-image';
 
 export default function LandingPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [showArrow, setShowArrow] = useState(true);
+  const logoRef = useRef<HTMLAnchorElement>(null);
+
+  const exportLogo = () => {
+    if (logoRef.current) {
+      htmlToImage.toSvg(logoRef.current)
+        .then((dataUrl) => {
+          const link = document.createElement('a');
+          link.download = 'benchy_logo.svg';
+          link.href = dataUrl;
+          link.click();
+        })
+        .catch((err) => {
+          console.error('oops, something went wrong!', err);
+        });
+    }
+  };
 
   useEffect(() => {
     if (session) {
@@ -23,6 +40,8 @@ export default function LandingPage() {
         {/* Top nav — pinned */}
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
           <a
+            ref={logoRef}
+            onClick={(e) => { e.preventDefault(); exportLogo(); }}
             href="/"
             className="flex items-center gap-2 hover:opacity-80 transition-opacity text-4xl"
           >

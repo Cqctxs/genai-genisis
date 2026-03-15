@@ -268,6 +268,14 @@ async def _analyze_chunk(
         "call_edges": ast_map.get("call_edges", []),
     }
 
+    # When target_functions is set, filter AST to only those functions
+    # and add guidance so the LLM focuses exclusively on them.
+    target_fn_set = set(chunk.target_functions) if chunk.target_functions else None
+    if target_fn_set:
+        filtered_ast["functions"] = [
+            f for f in filtered_ast["functions"] if f.get("name") in target_fn_set
+        ]
+
     agent = get_agent(AnalysisResult, ANALYSIS_PROMPT, GEMINI_FLASH)
 
     prompt = f"""## Chunk: {chunk.label} (Priority: {chunk.priority})
@@ -284,6 +292,14 @@ Triage reasoning: {chunk.reasoning}
         prompt += f"\n### {path}\n```\n{content[:5000]}\n```\n"
 
     prompt += f"\nThe language is: {language}"
+
+    if target_fn_set:
+        prompt += (
+            f"\n\nIMPORTANT: Focus your analysis ONLY on these specific functions: "
+            f"{', '.join(target_fn_set)}. "
+            f"These were explicitly selected by the user for optimization. "
+            f"Do NOT report hotspots for other functions in these files."
+        )
 
     try:
         result = await run_agent_logged(

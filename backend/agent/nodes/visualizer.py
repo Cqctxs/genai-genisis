@@ -27,6 +27,10 @@ Classify every node into exactly one node_type:
 For every node, populate:
 - label: A short human-readable name (e.g. "Fetch User Profile", "Query Orders Table")
 - file: The source file path
+- function_name: The exact function/method name from the AST (e.g. "fetch_user_profile", "queryOrders").
+  This MUST match the function name in the source code exactly so it can be mapped back later.
+- line_start: The starting line number of the function in its source file (from the AST data)
+- line_end: The ending line number of the function in its source file (from the AST data)
 - node_type: One of the five types above
 - inputs: Key-value pairs of the function's parameters (param_name → type or brief description).
            Omit if the function takes no meaningful args.
@@ -131,6 +135,10 @@ Classify every node into exactly one node_type:
 For every node, populate:
 - label: A short human-readable name (e.g. "Fetch User Profile", "Query Orders Table")
 - file: The source file path
+- function_name: The exact function/method name from the AST (e.g. "fetch_user_profile", "queryOrders").
+  This MUST match the function name in the source code exactly so it can be mapped back later.
+- line_start: The starting line number of the function in its source file (from the AST data)
+- line_end: The ending line number of the function in its source file (from the AST data)
 - node_type: One of the five types above
 - inputs: Key-value pairs of the function's parameters (param_name → type or brief description).
            Omit if the function takes no meaningful args.

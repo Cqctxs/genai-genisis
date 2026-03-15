@@ -12,6 +12,7 @@ from agent.nodes.optimizer import optimize_node
 from agent.nodes.reporter import report_node
 from agent.nodes.runner import run_benchmarks_node
 from agent.nodes.visualizer import visualize_node, visualize_preview_node
+from agent.schemas import GraphData, GraphNode, TriageChunk, TriageResult
 from agent.state import AgentState
 from services.github_pr_service import create_optimization_pr
 from services.github_service import cleanup_repo, clone_repo
@@ -219,6 +220,80 @@ async def _create_pr(state: AgentState) -> dict:
         }
 
 
+def node_based_chunking(state: AgentState) -> dict:
+    """Build TriageResult from user-selected graph nodes instead of running LLM triage.
+
+    Groups selected nodes by file and creates TriageChunk objects that
+    chunk_analyze_node can consume directly.
+    """
+    selected_ids = set(state.get("selected_node_ids") or [])
+    preview_graph = state.get("preview_graph_data") or {}
+    ast_map = state.get("ast_map", {})
+
+    graph_data = GraphData(**preview_graph) if preview_graph else GraphData(nodes=[], edges=[])
+    selected_nodes = [n for n in graph_data.nodes if n.id in selected_ids]
+
+    if not selected_nodes:
+        log.warning("node_based_chunking_empty", reason="no selected nodes matched graph")
+        selected_nodes = list(graph_data.nodes)
+
+    # Detect language from AST functions or default
+    functions = ast_map.get("functions", [])
+    language = "python"
+    if functions:
+        sample_file = functions[0].get("file", "")
+        if sample_file.endswith((".js", ".ts", ".jsx", ".tsx")):
+            language = "javascript"
+
+    # Group selected nodes by file
+    file_groups: dict[str, list[GraphNode]] = {}
+    for node in selected_nodes:
+        file_groups.setdefault(node.file, []).append(node)
+
+    # Create TriageChunk per file group
+    chunks: list[TriageChunk] = []
+    for i, (file_path, nodes) in enumerate(file_groups.items(), start=1):
+        fn_names = [n.function_name or n.label for n in nodes]
+        severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        best_severity = min(
+            (severity_order.get(n.severity or "low", 3) for n in nodes),
+            default=3,
+        )
+        chunks.append(
+            TriageChunk(
+                chunk_id=f"node_chunk_{i}",
+                label=f"Selected nodes in {file_path}",
+                files=[file_path],
+                priority=best_severity + 1,
+                reasoning=f"User-selected functions: {', '.join(fn_names)}",
+                target_functions=fn_names,
+            )
+        )
+
+    chunks.sort(key=lambda c: c.priority)
+
+    triage = TriageResult(
+        language=language,
+        chunks=chunks,
+        total_files_scanned=len(file_groups),
+        summary=f"Node-based chunking: {len(selected_nodes)} selected nodes across {len(file_groups)} files",
+    )
+
+    log.info(
+        "node_based_chunking_complete",
+        selected_nodes=len(selected_nodes),
+        chunks=len(chunks),
+        files=list(file_groups.keys()),
+    )
+
+    return {
+        **state,
+        "triage_result": triage.model_dump(),
+        "messages": state.get("messages", [])
+        + [f"Node-based chunking: {len(selected_nodes)} targets across {len(chunks)} chunks"],
+    }
+
+
 def _extract_result(state: AgentState) -> dict:
     """Extract the final result payload from the accumulated pipeline state."""
     initial_results = state.get("initial_results", [])
@@ -259,7 +334,8 @@ def _extract_result(state: AgentState) -> dict:
 
 @rt.function_node
 async def optimization_pipeline(
-    repo_url: str, github_token: str, optimization_bias: str = "balanced", fast_mode: bool = False
+    repo_url: str, github_token: str, optimization_bias: str = "balanced", fast_mode: bool = False,
+    selected_node_ids: list[str] | None = None, graph_data_json: str | None = None,
 ) -> dict:
     """Main orchestration flow — replaces the LangGraph StateGraph.
 
@@ -267,12 +343,20 @@ async def optimization_pipeline(
     and internals are unchanged).  The retry loop and conditional routing
     that was previously expressed as graph edges is now a plain Python
     for-loop with break.
+
+    When selected_node_ids and graph_data_json are provided (from the preview
+    flowchart step), triage is replaced with deterministic node-based
+    chunking that targets only the user-selected functions.
     """
+    use_node_chunking = bool(selected_node_ids and graph_data_json)
+
     state: AgentState = {
         "repo_url": repo_url,
         "github_token": github_token,
         "optimization_bias": optimization_bias,
         "fast_mode": fast_mode,
+        "selected_node_ids": selected_node_ids,
+        "preview_graph_data": json.loads(graph_data_json) if graph_data_json else None,
         "messages": [],
     }
 
@@ -288,9 +372,13 @@ async def optimization_pipeline(
     await rt.broadcast("Parsing codebase AST...")
     state.update(await parse_ast_node(state))
 
-    # ── Triage ───────────────────────────────────────────────────────────
-    await rt.broadcast("Triaging codebase for hotspots...")
-    state.update(await triage_node(state))
+    # ── Triage / Node-based chunking ───────────────────────────────────
+    if use_node_chunking:
+        await rt.broadcast("Building optimization targets from selected nodes...")
+        state.update(node_based_chunking(state))
+    else:
+        await rt.broadcast("Triaging codebase for hotspots...")
+        state.update(await triage_node(state))
 
     # ── Streaming analysis + benchmarks ──────────────────────────────────
     # Each chunk independently: analyze -> gen benchmarks -> run benchmarks
@@ -363,14 +451,25 @@ async def run_optimization_pipeline(
     queue: asyncio.Queue | None = None,
     optimization_bias: str = "balanced",
     fast_mode: bool = False,
+    selected_node_ids: list[str] | None = None,
+    graph_data: dict | None = None,
 ) -> dict:
     """Public entry point — creates a per-request Railtracks Flow and runs it.
 
     The signature is intentionally identical to the old LangGraph version so
     that ``main.py`` requires zero changes.
     """
-    log.info("pipeline_start", repo_url=repo_url, optimization_bias=optimization_bias)
+    log.info(
+        "pipeline_start",
+        repo_url=repo_url,
+        optimization_bias=optimization_bias,
+        node_based=bool(selected_node_ids and graph_data),
+    )
     pipeline_start = time.monotonic()
+
+    # Serialize graph_data dict to JSON string for the railtracks node
+    # (railtracks rejects dict types in @rt.function_node parameters)
+    graph_data_json = json.dumps(graph_data) if graph_data else None
 
     broadcast_cb = None  # type: ignore[assignment]
     if queue:
@@ -391,7 +490,7 @@ async def run_optimization_pipeline(
         timeout=900.0,
     )
 
-    result = await flow.ainvoke(repo_url, github_token, optimization_bias, fast_mode)
+    result = await flow.ainvoke(repo_url, github_token, optimization_bias, fast_mode, selected_node_ids, graph_data_json)
 
     total_elapsed = time.monotonic() - pipeline_start
     log.info("pipeline_complete", total_time_s=round(total_elapsed, 1))
