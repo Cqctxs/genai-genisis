@@ -25,7 +25,7 @@ function SpinningBenchy() {
 export default function AsciiBenchyScene({ color = "white" }: { color?: string }) {
   return (
     <div style={{ width: "100%", height: "100%", backgroundColor: "transparent" }}>
-      <Canvas camera={{ position: [0, 5, -100], fov: 50 }}>
+      <Canvas camera={{ position: [0, 0, -80], fov: 40 }}>
 
         {/* Keep the WebGL background black. The AsciiRenderer needs to "see"
             black so it knows to map the background to an empty space. */}

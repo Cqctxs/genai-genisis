@@ -475,14 +475,21 @@ async def chunk_analyze_node(state: AgentState) -> dict:
     all_results: list[dict] = []
     seen: set[tuple[str, str]] = set()
 
+    seen_benchmarks: set[tuple[str, str]] = set()
+
     for hotspots, benchmarks, results in stream_results:
         for hotspot in hotspots:
             key = (hotspot.function_name, hotspot.file)
             if key not in seen:
                 seen.add(key)
                 all_hotspots.append(hotspot)
-        all_benchmarks.extend(benchmarks)
-        all_results.extend(results)
+
+        for bench, result in zip(benchmarks, results):
+            bench_key = (bench.get("target_function"), bench.get("file"))
+            if bench_key not in seen_benchmarks:
+                seen_benchmarks.add(bench_key)
+                all_benchmarks.append(bench)
+                all_results.append(result)
 
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     all_hotspots.sort(key=lambda h: severity_order.get(h.severity, 4))

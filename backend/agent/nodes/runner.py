@@ -380,6 +380,10 @@ async def run_benchmarks_node(state: AgentState) -> dict:
         except Exception:
             pass
 
+    # Apply optimized files so the final benchmark actually measures the new code
+    for opt_file, opt_content in state.get("optimized_files", {}).items():
+        repo_files[opt_file] = opt_content
+
     for manifest in ("requirements.txt", "package.json"):
         if manifest not in repo_files:
             try:
