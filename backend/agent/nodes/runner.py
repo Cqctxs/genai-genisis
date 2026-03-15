@@ -48,15 +48,22 @@ async def _regenerate_benchmark(
     error_msg: str,
     stderr: str,
     ast_map: dict,
+    repo_files: dict[str, str],
 ) -> BenchmarkScript | None:
     """Ask Gemini to fix a benchmark script that failed at runtime."""
     from agent.nodes.benchmarker import BENCHMARK_PROMPT
     from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
     filtered_ast = {
-        "functions": [f for f in ast_map.get("functions", []) if f.get("file") == bench.file],
-        "classes": [c for c in ast_map.get("classes", []) if c.get("file") == bench.file],
-        "imports": [i for i in ast_map.get("imports", []) if i.get("file") == bench.file],
+        "functions": [
+            f for f in ast_map.get("functions", []) if f.get("file") == bench.file
+        ],
+        "classes": [
+            c for c in ast_map.get("classes", []) if c.get("file") == bench.file
+        ],
+        "imports": [
+            i for i in ast_map.get("imports", []) if i.get("file") == bench.file
+        ],
     }
 
     # Detect timeout errors and add specific guidance
@@ -94,6 +101,11 @@ in the sandbox. Regenerate a FIXED version that avoids the error.
 {bench.script_content}
 ```
 
+### Original File Content ({bench.file})
+```{bench.language}
+{repo_files.get(bench.file, "(File content not found)")[:15000]}
+```
+
 ### AST Context (functions in the target file: {bench.file})
 ```json
 {json.dumps(filtered_ast, indent=2)[:3000]}
@@ -109,7 +121,9 @@ IMPORTANT:
 
     try:
         agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_FLASH)
-        result = await run_agent_logged(agent, fix_prompt, node_name=f"fix_bench_{bench.target_function}")
+        result = await run_agent_logged(
+            agent, fix_prompt, node_name=f"fix_bench_{bench.target_function}"
+        )
         fixed: BenchmarkScript = result.output  # type: ignore[assignment]
         log.info(
             "benchmark_regenerated",
@@ -119,7 +133,9 @@ IMPORTANT:
         )
         return fixed
     except Exception as e:
-        log.error("benchmark_regeneration_failed", target=bench.target_function, error=str(e))
+        log.error(
+            "benchmark_regeneration_failed", target=bench.target_function, error=str(e)
+        )
         return None
 
 
@@ -153,7 +169,9 @@ def _parse_benchmark_output(
     )
 
     if not stdout.strip():
-        log.error("benchmark_empty_stdout", target=bench.target_function, stderr=stderr[:500])
+        log.error(
+            "benchmark_empty_stdout", target=bench.target_function, stderr=stderr[:500]
+        )
         return (
             BenchmarkResult(
                 function_name=bench.target_function,
@@ -262,9 +280,13 @@ async def _execute_single_benchmark(
         remaining = MAX_BENCH_RETRIES - attempt
         if remaining <= 0 or ast_map is None or not allow_regeneration:
             if remaining <= 0:
-                log.warning("benchmark_max_retries_exhausted", target=bench.target_function)
+                log.warning(
+                    "benchmark_max_retries_exhausted", target=bench.target_function
+                )
             elif not allow_regeneration:
-                log.warning("benchmark_regeneration_disabled", target=bench.target_function)
+                log.warning(
+                    "benchmark_regeneration_disabled", target=bench.target_function
+                )
             return result
 
         log.info(
@@ -278,6 +300,7 @@ async def _execute_single_benchmark(
             error_desc or "Unknown failure",
             output.get("stderr", ""),
             ast_map,
+            repo_files,
         )
         if fixed is None:
             return result
@@ -333,16 +356,19 @@ async def run_benchmarks_node(state: AgentState) -> dict:
     benchmarks = [BenchmarkScript(**b) for b in state.get("benchmark_code", [])]
     repo_path = state.get("repo_path", "")
     file_tree = state.get("file_tree", [])
-    results_key = "initial_results" if "initial_results" not in state else "final_results"
+    results_key = (
+        "initial_results" if "initial_results" not in state else "final_results"
+    )
 
     # Build a lookup from (function_name, file) -> previous result so unmodified
     # benchmarks can be reused cheaply.  On the initial run there are no previous
     # results, so this dict is empty and every benchmark runs normally.
     optimized_files: set[str] = set(state.get("optimized_files", {}).keys())
-    previous_results: list[dict] = state.get("final_results", state.get("initial_results", []))
+    previous_results: list[dict] = state.get(
+        "final_results", state.get("initial_results", [])
+    )
     prev_by_key: dict[tuple[str, str], dict] = {
-        (r.get("function_name", ""), r.get("file", "")): r
-        for r in previous_results
+        (r.get("function_name", ""), r.get("file", "")): r for r in previous_results
     }
 
     log.info(
@@ -354,7 +380,7 @@ async def run_benchmarks_node(state: AgentState) -> dict:
     )
 
     repo_files = {}
-    for f in file_tree[:30]:
+    for f in file_tree:
         try:
             repo_files[f] = read_file(repo_path, f)
         except Exception:
@@ -378,6 +404,23 @@ async def run_benchmarks_node(state: AgentState) -> dict:
 
     async def _run_or_reuse(bench: BenchmarkScript, index: int) -> dict:
         key = (bench.target_function, bench.file)
+
+        # If the original baseline completely failed, do not rerun it, just return the failure
+        initial_res = next(
+            (
+                r
+                for r in state.get("initial_results", [])
+                if r.get("function_name") == bench.target_function
+                and r.get("file") == bench.file
+            ),
+            None,
+        )
+        if initial_res and _is_failed_result(initial_res):
+            log.warning(
+                "benchmark_skipping_previously_broken", target=bench.target_function
+            )
+            return initial_res
+
         # Only skip if we actually know which files were optimized (re-run) AND
         # this benchmark's file was not among them.
         if optimized_files and bench.file not in optimized_files:
@@ -389,7 +432,9 @@ async def run_benchmarks_node(state: AgentState) -> dict:
                     file=bench.file,
                 )
                 return cached
-        return await _execute_single_benchmark(bench, index, repo_files, ast_map=ast_map or None)
+        return await _execute_single_benchmark(
+            bench, index, repo_files, ast_map=ast_map or None
+        )
 
     tasks = [_run_or_reuse(bench, i) for i, bench in enumerate(benchmarks)]
     results = list(await asyncio.gather(*tasks))
@@ -401,17 +446,15 @@ async def run_benchmarks_node(state: AgentState) -> dict:
         count=len(results),
         total_time_ms=round(total_time, 1),
         summary=[
-            {"fn": r["function_name"], "time_ms": r["avg_time_ms"]}
-            for r in results[:5]
+            {"fn": r["function_name"], "time_ms": r["avg_time_ms"]} for r in results[:5]
         ],
     )
 
     update: dict = {
         **state,
         results_key: results,
-        "messages": state.get("messages", []) + [
-            f"Completed {len(results)} benchmarks"
-        ],
+        "messages": state.get("messages", [])
+        + [f"Completed {len(results)} benchmarks"],
     }
 
     if results_key == "final_results":
@@ -429,9 +472,7 @@ async def run_benchmarks_node(state: AgentState) -> dict:
                 f"Correctness check: {len(failures)} function(s) changed behavior: {', '.join(failed_fns)}"
             ]
         else:
-            matched = sum(
-                1 for r in results if r.get("validation_fingerprint")
-            )
+            matched = sum(1 for r in results if r.get("validation_fingerprint"))
             log.info("correctness_check_passed", fingerprints_matched=matched)
             update["correctness_failures"] = []
 
