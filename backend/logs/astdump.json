@@ -1,0 +1,167 @@
+{
+  "functions": [
+    {
+      "file": "demo/data_parser.py",
+      "name": "load_transactions",
+      "line_start": 3,
+      "line_end": 10,
+      "params": [
+        "filepath"
+      ],
+      "calls": [],
+      "parameter_types": {},
+      "return_type": "",
+      "decorators": [],
+      "is_async": false,
+      "is_generator": false,
+      "docstring": "Loads transactions from a JSON file.\n    Intentional bottleneck: Reads the entire file into a giant string first."
+    },
+    {
+      "file": "demo/data_parser.py",
+      "name": "load_users",
+      "line_start": 12,
+      "line_end": 19,
+      "params": [
+        "filepath"
+      ],
+      "calls": [],
+      "parameter_types": {},
+      "return_type": "",
+      "decorators": [],
+      "is_async": false,
+      "is_generator": false,
+      "docstring": "Loads users from a JSONL file.\n    Intentional bottleneck: Uses readlines() which loads all lines into memory."
+    },
+    {
+      "file": "demo/generator.py",
+      "name": "generate_mock_data",
+      "line_start": 5,
+      "line_end": 29,
+      "params": [
+        "num_users",
+        "num_transactions"
+      ],
+      "calls": [],
+      "parameter_types": {},
+      "return_type": "",
+      "decorators": [],
+      "is_async": false,
+      "is_generator": false,
+      "docstring": ""
+    },
+    {
+      "file": "demo/main.py",
+      "name": "main",
+      "line_start": 6,
+      "line_end": 28,
+      "params": [],
+      "calls": [],
+      "parameter_types": {},
+      "return_type": "",
+      "decorators": [],
+      "is_async": false,
+      "is_generator": false,
+      "docstring": ""
+    },
+    {
+      "file": "demo/processor.py",
+      "name": "enrich_transactions",
+      "line_start": 1,
+      "line_end": 20,
+      "params": [
+        "transactions",
+        "users"
+      ],
+      "calls": [],
+      "parameter_types": {},
+      "return_type": "",
+      "decorators": [],
+      "is_async": false,
+      "is_generator": false,
+      "docstring": "Combines transaction data with user data.\n    Intentional bottleneck: O(N * M) nested loop for lookups."
+    },
+    {
+      "file": "demo/processor.py",
+      "name": "generate_report",
+      "line_start": 22,
+      "line_end": 36,
+      "params": [
+        "enriched_transactions"
+      ],
+      "calls": [],
+      "parameter_types": {},
+      "return_type": "",
+      "decorators": [],
+      "is_async": false,
+      "is_generator": false,
+      "docstring": "Generates a textual report of all enriched transactions.\n    Intentional bottleneck: Inefficient string concatenation in a loop."
+    }
+  ],
+  "classes": [],
+  "imports": [
+    {
+      "file": "demo/data_parser.py",
+      "module": "json",
+      "names": []
+    },
+    {
+      "file": "demo/generator.py",
+      "module": "json",
+      "names": []
+    },
+    {
+      "file": "demo/generator.py",
+      "module": "random",
+      "names": []
+    },
+    {
+      "file": "demo/generator.py",
+      "module": "uuid",
+      "names": []
+    },
+    {
+      "file": "demo/main.py",
+      "module": "time",
+      "names": []
+    },
+    {
+      "file": "demo/main.py",
+      "module": "concurrent.futures",
+      "names": []
+    },
+    {
+      "file": "demo/main.py",
+      "module": "data_parser",
+      "names": [
+        "load_transactions",
+        "load_users"
+      ]
+    },
+    {
+      "file": "demo/main.py",
+      "module": "processor",
+      "names": [
+        "enrich_transactions",
+        "generate_report"
+      ]
+    }
+  ],
+  "call_edges": [
+    [
+      "",
+      "generate_mock_data"
+    ],
+    [
+      "main",
+      "enrich_transactions"
+    ],
+    [
+      "main",
+      "generate_report"
+    ],
+    [
+      "",
+      "main"
+    ]
+  ]
+}

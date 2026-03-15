@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 
 import structlog
 
@@ -78,6 +79,10 @@ async def parse_ast_node(state: AgentState) -> dict:
         imports=len(ast_data.imports),
         call_edges=len(ast_data.call_edges),
     )
+
+    dump_path = os.path.join(os.path.dirname(__file__), "..", "..", "logs", "astdump.json")
+    with open(dump_path, "w") as f:
+        json.dump(ast_data.model_dump(), f, indent=2)
 
     return {
         **state,

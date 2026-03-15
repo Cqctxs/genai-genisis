@@ -1,6 +1,6 @@
 # Railtracks Integration
 
-CodeMark uses [Railtracks](https://www.railtown.ai/) by Railtown as the orchestration framework for its AI agent workflow. Railtracks manages the end-to-end optimization pipeline, handling flow execution, real-time progress broadcasting, and state persistence.
+Benchy uses [Railtracks](https://www.railtown.ai/) by Railtown as the orchestration framework for its AI agent workflow. Railtracks manages the end-to-end optimization pipeline, handling flow execution, real-time progress broadcasting, and state persistence.
 
 ## Why Railtracks
 
