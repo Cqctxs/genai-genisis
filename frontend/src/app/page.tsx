@@ -2,12 +2,13 @@
 
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import AsciiBenchyScene from "@/components/benchy-ascii";
 
 export default function LandingPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const [showArrow, setShowArrow] = useState(true);
 
   useEffect(() => {
     if (session) {
@@ -18,7 +19,7 @@ export default function LandingPage() {
   return (
     <div className="h-screen bg-light p-3 sm:p-4 flex flex-col">
       {/* Dark interior panel — fills the frame, rounded inside */}
-      <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden relative">
         {/* Top nav — pinned */}
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
           <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity text-3xl">
@@ -40,15 +41,18 @@ export default function LandingPage() {
         </nav>
 
         {/* Content area with benchy background */}
-        <div className="flex-1 min-h-0 overflow-y-auto relative custom-scrollbar scroll-smooth">
+        <div
+          className="flex-1 min-h-0 overflow-y-auto relative custom-scrollbar scroll-smooth"
+          onScroll={(e) => setShowArrow(e.currentTarget.scrollTop < 50)}
+        >
           {/* Background — spinning benchy */}
           <div className="absolute top-0 left-0 w-full h-[calc(100vh-8rem)] pointer-events-none opacity-40">
-            <AsciiBenchyScene color="#faefe030" />
+            <AsciiBenchyScene color="#faefe050" />
           </div>
 
           <div className="relative z-10 flex flex-col">
             {/* Hero Section */}
-            <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center px-6 sm:px-10 py-12 pb-32">
+            <div className="relative min-h-[calc(100vh-8rem)] flex items-center justify-center px-6 sm:px-10 py-12 pb-32">
               <div className="max-w-2xl text-center space-y-12">
                 <div className="space-y-8">
                   <h1 className="font-serif sm:text-8xl text-7xl leading-[0.9] tracking-tight">
@@ -76,7 +80,7 @@ export default function LandingPage() {
                       href="#demo"
                       className="font-mono text-sm text-light/70 hover:text-light transition-colors px-6 py-3 border border-light/20 rounded hover:border-light/40"
                     >
-                      View a Demo
+                      Learn More
                     </a>
                   </div>
                   
@@ -89,68 +93,61 @@ export default function LandingPage() {
                     </div>
                   </div>
                 </div>
-
-                {/* Scroll Indicator */}
-                <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce opacity-30 hidden sm:block">
-                  <svg className="w-6 h-6 text-light" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                  </svg>
-                </div>
               </div>
             </div>
 
             {/* Visual Proof / Demo Section (Below Fold) */}
             <div id="demo" className="w-full max-w-5xl mx-auto px-6 sm:px-10 py-16 pb-32">
               <div className="flex flex-col gap-24">
-                
-                {/* Social Proof */}
-                <div className="text-center space-y-8">
-                  <p className="font-mono text-xs text-light/40 uppercase tracking-widest">
-                    Analyzing millions of lines of code for teams at
-                  </p>
-                  <div className="flex flex-wrap justify-center items-center gap-12 sm:gap-20 opacity-30 grayscale saturate-0 pointer-events-none select-none">
-                    <span className="font-serif text-xl sm:text-2xl tracking-tighter">[ Acme Corp ]</span>
-                    <span className="font-mono text-xl sm:text-2xl font-bold">STARTUP.IO</span>
-                    <span className="font-sans text-xl sm:text-2xl font-black italic">NextGen</span>
-                  </div>
-                </div>
 
-                {/* Code Diff Box */}
-                <div className="rounded-xl border border-light/10 bg-[#0a0a0a] overflow-hidden shadow-2xl">
-                  {/* Mock Window Header */}
-                  <div className="px-4 py-3 border-b border-light/10 flex items-center gap-2 bg-[#111]">
-                    <div className="flex gap-1.5">
-                      <div className="w-2.5 h-2.5 rounded-full bg-light/20"></div>
-                      <div className="w-2.5 h-2.5 rounded-full bg-light/20"></div>
-                      <div className="w-2.5 h-2.5 rounded-full bg-light/20"></div>
-                    </div>
-                    <span className="ml-4 font-mono text-[10px] text-light/30">optimization_diff.rs</span>
+                {/* How it Works section */}
+                <div className="space-y-12 pb-24 text-light/80">
+                  <div className="text-center space-y-4">
+                    <h2 className="font-serif text-4xl sm:text-5xl">How it Works</h2>
+                    <p className="font-mono text-xs text-light/40 uppercase tracking-widest">
+                      The Benchy Architecture
+                    </p>
                   </div>
-                  {/* Split Screen Code */}
-                  <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-light/10">
-                    <div className="p-6 sm:p-8 font-mono text-xs sm:text-sm overflow-x-auto relative">
-                      <div className="mb-6"><span className="px-2 py-1 rounded bg-red-500/10 text-red-400 text-[10px] uppercase tracking-widest border border-red-500/20">O(n²) Before</span></div>
-                      <pre className="text-light/60 leading-relaxed">
-<span className="text-red-400/80">{"- for i in 0..items.len() {"}</span><br/>
-<span className="text-red-400/80">{"-     for j in 0..items.len() {"}</span><br/>
-<span className="text-light/40">{"-         if items[i] == items[j] { "}</span><br/>
-<span className="text-light/40">{"-             duplicates.push(items[i]);"}</span><br/>
-<span className="text-light/40">{"-         }"}</span><br/>
-<span className="text-red-400/80">{"-     }"}</span><br/>
-<span className="text-red-400/80">{"- }"}</span>
-                      </pre>
+
+                  <div className="grid md:grid-cols-2 gap-12 sm:gap-16 max-w-4xl mx-auto items-start">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-light/10 font-mono text-xs text-light">1</span>
+                        <h3 className="font-mono text-lg text-light">Job Submission</h3>
+                      </div>
+                      <p className="text-sm text-light/60 leading-relaxed">
+                        Submit a GitHub URL via the dashboard, or trigger Benchy right from the VS Code extension. The extension packages up local files (respecting `.gitignore`) and sends them to the FastAPI backend.
+                      </p>
                     </div>
-                    <div className="p-6 sm:p-8 font-mono text-xs sm:text-sm overflow-x-auto relative bg-accent-green/5">
-                      <div className="mb-6"><span className="px-2 py-1 rounded bg-accent-green/10 text-accent-green text-[10px] uppercase tracking-widest border border-accent-green/20">O(n) After</span></div>
-                      <pre className="text-light/80 leading-relaxed">
-<span className="text-accent-green">{"+ let mut seen = HashSet::new();"}</span><br/>
-<span className="text-accent-green">{"+ for item in items {"}</span><br/>
-<span className="text-light/60">{"+     if !seen.insert(item) {"}</span><br/>
-<span className="text-light/60">{"+         duplicates.push(item);"}</span><br/>
-<span className="text-light/60">{"+     }"}</span><br/>
-<span className="text-accent-green">{"+ }"}</span><br/>
-<span className="text-transparent">{"  "}</span>
-                      </pre>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-light/10 font-mono text-xs text-light">2</span>
+                        <h3 className="font-mono text-lg text-light">Agentic Pipeline (Powered by Railtracks)</h3>
+                      </div>
+                      <p className="text-sm text-light/60 leading-relaxed">
+                        Built on top of Railtracks by Railtown, the overarching AI agent converts source code into an Abstract Syntax Tree (AST) to map its structure. It then executes the code dynamically with injected profiling tools to identify actual algorithmic bottlenecks.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-light/10 font-mono text-xs text-light">3</span>
+                        <h3 className="font-mono text-lg text-light">Optimization</h3>
+                      </div>
+                      <p className="text-sm text-light/60 leading-relaxed">
+                        Using real runtime data and flame graphs from the sandbox environment, Gemini rewrites the slow functions. The code is re-run and verified to ensure exact functionality while running significantly faster.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-light/10 font-mono text-xs text-light">4</span>
+                        <h3 className="font-mono text-lg text-light">Code Delivery</h3>
+                      </div>
+                      <p className="text-sm text-light/60 leading-relaxed">
+                        Live telemetry streams the execution directly to your browser. Once finalized, radar charts compare the baseline to the optimized code, rendering a side-by-side IDE-style diff that you can instantly apply back into your IDE.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -160,8 +157,18 @@ export default function LandingPage() {
           </div>
         </div>
 
+        {/* Scroll Indicator - Always anchored to viewport bottom */}
+        <div
+          className="absolute z-20 bottom-24 left-1/2 -translate-x-1/2 animate-bounce hidden sm:block transition-opacity duration-500 pointer-events-none"
+          style={{ opacity: showArrow ? 0.4 : 0 }}
+        >
+          <svg className="w-6 h-6 text-light" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+        </div>
+
         {/* Terminal status bar — pinned */}
-        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center">
+        <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center bg-dark z-20">
           <p className="font-mono text-[11px] text-light/30">
             [✓] all systems nominal · welcome to benchy
           </p>
