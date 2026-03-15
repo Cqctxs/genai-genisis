@@ -17,7 +17,8 @@ in a codebase, generate profiling scripts that measure the execution time of eac
 The benchmark script runs inside an isolated sandbox where:
 - The repo's source files are available in the working directory (same layout as the repo).
 - The repo's dependencies from requirements.txt / package.json ARE already installed.
-- You MUST import from the repo normally (e.g. `from myapp.utils import process_data`).
+- You MUST import from the repo normally using the actual file path provided (e.g. if the File is `advanced_demo/analytics.py`, use `from advanced_demo.analytics import process_data` in Python or `require('./advanced_demo/analytics')` in JS).
+- Do NOT use generic names like `from hotspot_1 import ...`. The file is named exactly what is passed in the "File:" field.
 - Do NOT reimplement, inline, or stub out functions that exist in the repo.
 - Do NOT call pip install or npm install — dependencies are pre-installed.
 - If a function requires database connections, network I/O, or external services to run,
