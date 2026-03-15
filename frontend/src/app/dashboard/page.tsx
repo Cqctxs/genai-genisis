@@ -76,8 +76,17 @@ export default function DashboardPage() {
                 ...prev,
                 { node, message, timestamp: Date.now() },
               ]);
-              if (node && nodeToPhase[node]) {
-                setPhase(nodeToPhase[node]);
+              const msgLower = message.toLowerCase();
+              if (msgLower.includes("cloning") || msgLower.includes("parsing") || msgLower.includes("triaging")) {
+                setPhase("analyzing");
+              } else if (msgLower.includes("re-run") || msgLower.includes("re-optimizing")) {
+                setPhase("re-benchmarking");
+              } else if (msgLower.includes("streaming analysis") && msgLower.includes("benchmarks per chunk")) {
+                setPhase("benchmarking");
+              } else if (msgLower.includes("generating visualization") || msgLower.includes("optimizations")) {
+                setPhase("optimizing");
+              } else if (msgLower.includes("report") || msgLower.includes("pull request")) {
+                setPhase("scoring");
               }
             }
             if (event.event === "complete") {
@@ -113,8 +122,8 @@ export default function DashboardPage() {
     phase === "idle"
       ? "● [✓] ready · select a repository"
       : phase === "error"
-      ? "● [✗] error encountered"
-      : `● [◎] ${phase}…`;
+        ? "● [✗] error encountered"
+        : `● [◎] ${phase}…`;
 
   if (status === "loading") {
     return (
@@ -197,13 +206,12 @@ export default function DashboardPage() {
         <div className="shrink-0 border-t border-light/10 px-6 sm:px-10 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                phase === "idle"
+              className={`w-2.5 h-2.5 rounded-full ${phase === "idle"
                   ? "bg-accent-green"
                   : phase === "error"
-                  ? "bg-accent-red"
-                  : "bg-accent-orange animate-pulse"
-              }`}
+                    ? "bg-accent-red"
+                    : "bg-accent-orange animate-pulse"
+                }`}
             />
             <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
             <span className="w-2.5 h-2.5 rounded-full bg-light/20" />
