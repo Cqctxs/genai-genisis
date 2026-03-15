@@ -57,3 +57,6 @@ temp/
 plan.md
 
 .railtracks/
+
+# logs
+backend/logs/

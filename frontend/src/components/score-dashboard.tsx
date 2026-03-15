@@ -227,21 +227,21 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 label="Time"
                 before={benchy_score.time_score_before}
                 value={benchy_score.time_score}
-                max={20000}
+                max={10000}
                 color="var(--color-accent-blue)"
               />
               <SubScoreBar
                 label="Memory"
                 before={benchy_score.memory_score_before}
                 value={benchy_score.memory_score}
-                max={20000}
+                max={10000}
                 color="var(--color-accent-green)"
               />
               <SubScoreBar
                 label="API Efficiency"
                 before={benchy_score.api_score_before}
                 value={benchy_score.api_score}
-                max={20000}
+                max={10000}
                 color="var(--color-accent-purple)"
               />
             </div>

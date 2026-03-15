@@ -77,8 +77,27 @@ The script took too long to run. The function has high algorithmic complexity.
     is_attribute_error = "AttributeError" in error_msg
     if is_attribute_error:
         timeout_guidance += """\n### CRITICAL: AttributeError from Mock Patch
-If you used `unittest.mock.patch` without importing the module first, it will crash. 
-**You MUST `import module` before patching any of its attributes.** (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Or completely remove the use of `patch` and use manual stubbing."""
+If you used `unittest.mock.patch` without importing the module first, it will crash.
+**You MUST `import module` before patching any of its attributes.** (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Or completely remove the use of `patch` and use manual stubbing.
+
+Also, if a mock object is passed as an argument to a function that accesses `func.__name__`, the mock MUST have `__name__` explicitly set:
+```python
+mock_fn = MagicMock()
+mock_fn.__name__ = 'original_function_name'
+```
+Prefer running the ACTUAL target function rather than mocking it. Only mock external I/O dependencies."""
+
+    is_io_error = "ValueError: I/O operation on" in error_msg
+    if is_io_error:
+        timeout_guidance += """\n### CRITICAL: ValueError on closed file/buffer
+You are likely trying to call `.getvalue()` or read from a `StringIO` or file object that has already been closed. (e.g., if you mocked `open` to return a `StringIO`, exiting the `with open(...)` block closes the `StringIO`, so `.getvalue()` will crash). 
+**DO NOT MOCK `open()`**. The sandbox has an ephemeral file system. Just write to a real temporary file (`"test.csv"`) and read from it natively!"""
+
+    is_key_error = "KeyError:" in error_msg
+    if is_key_error:
+        timeout_guidance += """\n### CRITICAL: KeyError during execution
+Your generated test data or mock object is missing a key expected by the function. Look at the traceback and the file content to determine what keys the function attempts to access. Update the dictionary or object generator in your benchmark script so that ALL required keys are populated with appropriate dummy types!"""
+
 
 
     fix_prompt = f"""## Previous Benchmark Script FAILED at Runtime

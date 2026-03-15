@@ -218,11 +218,20 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
             timeout=DEP_INSTALL_TIMEOUT,
         )
 
+    # Sanitize out builtins.open patches to prevent LLM from bypassing the ephemeral disk.
+    # We silently redirect the patch to `builtins.id` so open() remains unmocked.
+    code = re.sub(r"patch\(\s*['\"]builtins\.open['\"]", "patch('builtins.id'", code)
+
     with open(os.path.join(workdir, "_benchmark_inner.py"), "w") as f:
         f.write(code)
 
     with open(os.path.join(workdir, "_benchmark.py"), "w") as f:
         f.write(PYTHON_MEMORY_WRAPPER)
+
+    # Explicitly set PYTHONPATH to the workdir so that imports resolve from
+    # the repo's local files first, not from system site-packages.
+    env = os.environ.copy()
+    env["PYTHONPATH"] = workdir + os.pathsep + env.get("PYTHONPATH", "")
 
     for _ in range(3):
         result = subprocess.run(
@@ -231,6 +240,7 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
             text=True,
             timeout=BENCHMARK_TIMEOUT,
             cwd=workdir,
+            env=env,
         )
         if result.returncode != 0 and "ModuleNotFoundError" in result.stderr:
             m = re.search(
