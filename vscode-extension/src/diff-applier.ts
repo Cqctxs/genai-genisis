@@ -89,32 +89,66 @@ export async function applyDiffs(
       );
     }
 
-    // Let the user review all diffs, then pick which to accept
-    const items = diffs.map((d) => ({
-      label: d.relativePath,
-      picked: true,
-    }));
+    // Persistent prompt — re-shows when dismissed so the user can
+    // freely click around diff tabs and come back when ready.
+    let decided = false;
+    while (!decided) {
+      const choice = await vscode.window.showInformationMessage(
+        `CodeMark: ${diffs.length} file(s) optimized — review the diffs, then choose.`,
+        "Accept All",
+        "Pick Files",
+        "Skip All",
+      );
 
-    const selected = await vscode.window.showQuickPick(items, {
-      canPickMany: true,
-      placeHolder: "Select files to apply optimizations (Esc to skip all)",
-    });
-
-    if (selected && selected.length > 0) {
-      const selectedPaths = new Set(selected.map((s) => s.label));
-      for (const diff of diffs) {
-        if (selectedPaths.has(diff.relativePath)) {
+      if (choice === "Accept All") {
+        for (const diff of diffs) {
           const fullPath = path.join(workspaceRoot, diff.relativePath);
-          await fs.promises.writeFile(fullPath, diff.optimizedContent, "utf-8");
+          await fs.promises.writeFile(
+            fullPath,
+            diff.optimizedContent,
+            "utf-8",
+          );
         }
+        vscode.window.showInformationMessage(
+          `CodeMark: Applied optimizations to ${diffs.length} file(s).`,
+        );
+        decided = true;
+      } else if (choice === "Pick Files") {
+        const items = diffs.map((d) => ({
+          label: d.relativePath,
+          picked: true,
+        }));
+        const selected = await vscode.window.showQuickPick(items, {
+          canPickMany: true,
+          placeHolder: "Select files to apply (Esc to go back)",
+        });
+        if (selected) {
+          const selectedPaths = new Set(selected.map((s) => s.label));
+          for (const diff of diffs) {
+            if (selectedPaths.has(diff.relativePath)) {
+              const fullPath = path.join(workspaceRoot, diff.relativePath);
+              await fs.promises.writeFile(
+                fullPath,
+                diff.optimizedContent,
+                "utf-8",
+              );
+            }
+          }
+          vscode.window.showInformationMessage(
+            selected.length > 0
+              ? `CodeMark: Applied optimizations to ${selected.length} file(s).`
+              : "CodeMark: No optimizations applied.",
+          );
+          decided = true;
+        }
+        // QuickPick dismissed (Esc) → loop back to main prompt
+      } else if (choice === "Skip All") {
+        vscode.window.showInformationMessage(
+          "CodeMark: No optimizations applied.",
+        );
+        decided = true;
       }
-      vscode.window.showInformationMessage(
-        `CodeMark: Applied optimizations to ${selected.length} file(s).`,
-      );
-    } else {
-      vscode.window.showInformationMessage(
-        "CodeMark: No optimizations applied.",
-      );
+      // choice === undefined (clicked away) → loop and re-show
     }
 
     // Close all CodeMark diff tabs
