@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class FunctionInfo(BaseModel):
@@ -134,6 +134,16 @@ class BenchmarkScript(BaseModel):
     script_content: str
     description: str
 
+    @field_validator("script_content")
+    @classmethod
+    def strip_overescaped_quotes(cls, v: str) -> str:
+        # LLMs occasionally over-escape code chunks inside JSON, leaving literal \"\"\" in python strings
+        if r"\"\"\"" in v:
+            v = v.replace(r"\"\"\"", '"""')
+        if r"\'\'\'" in v:
+            v = v.replace(r"\'\'\'", "'''")
+        return v
+
 
 class BenchmarkBatch(BaseModel):
     scripts: list[BenchmarkScript]
@@ -196,6 +206,15 @@ class OptimizationChange(BaseModel):
     optimized_snippet: str
     explanation: str
     expected_improvement: str
+
+    @field_validator("original_snippet", "optimized_snippet")
+    @classmethod
+    def strip_overescaped_quotes(cls, v: str) -> str:
+        if r"\"\"\"" in v:
+            v = v.replace(r"\"\"\"", '"""')
+        if r"\'\'\'" in v:
+            v = v.replace(r"\'\'\'", "'''")
+        return v
 
 
 class OptimizationPlan(BaseModel):

@@ -79,7 +79,10 @@ CRITICAL SANDBOX CONSTRAINTS:
   Doing so will crash the container.
 - Copy the target function's source code directly into the benchmark script.
 - Create mock/stub data instead of importing real modules when measuring pure logic.
-
+  CRITICAL JSON & ESCAPING CONSTRAINTS:
+  - Do NOT generate ANY docstrings or comments inside the Python/JS code.
+  - Do NOT use triple quotes (`\"\"\"` or `'''`) anywhere in the script to prevent JSON deserialization syntax errors.
+  - Prefer single quotes (`'`) over double quotes (`"`) for standard strings to minimize escaping issues.
 INPUT SIZE — THIS IS CRITICAL:
 - Use input sizes large enough to reveal algorithmic complexity differences.
 - For array/list operations: N = 10 000 minimum (50 000 preferred).

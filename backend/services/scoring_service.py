@@ -171,6 +171,10 @@ def compute_benchy_score(
     time_space_tradeoff_count = 0
 
     for init, fin in matched:
+        # Skip failed benchmarks (where iterations == 0 due to crash/timeout)
+        if init.get("iterations", 0) == 0 or fin.get("iterations", 0) == 0:
+            continue
+
         old_t = float(init.get("avg_time_ms", 0))
         new_t = float(fin.get("avg_time_ms", 0))
         old_m = float(init.get("memory_peak_mb", 0))
