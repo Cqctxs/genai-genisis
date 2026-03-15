@@ -268,11 +268,8 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                   <PolarRadiusAxis
                     angle={30}
                     domain={[0, 100]}
-                    tick={{
-                      fill: "var(--color-light)",
-                      fillOpacity: 0.25,
-                      fontSize: 9,
-                    }}
+                    tick={false}
+                    axisLine={false}
                   />
                   <Radar
                     name="Before"
