@@ -289,7 +289,7 @@ def compute_benchy_score(
     # ------------------------------------------------------------------
     overall_before = TIME_BASE + MEMORY_BASE + api_base
     overall_after = time_score + memory_score + api_score
-    overall_after = max(1000, min(overall_after, 20000))
+    overall_after = max(1000, min(overall_after, 10000))
 
     log.info(
         "benchy_score_computed",

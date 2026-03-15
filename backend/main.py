@@ -2,6 +2,7 @@ import asyncio
 import json
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -16,6 +17,9 @@ from sse_starlette.sse import EventSourceResponse
 load_dotenv()
 
 import logging.config
+
+LOG_DIR = Path(__file__).resolve().parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
 
 logging.config.dictConfig({
     "version": 1,
@@ -37,7 +41,7 @@ logging.config.dictConfig({
         },
         "file": {
             "class": "logging.FileHandler",
-            "filename": "run.jsonl",
+            "filename": str(LOG_DIR / "run.jsonl"),
             "formatter": "json",
             "mode": "a",
         },

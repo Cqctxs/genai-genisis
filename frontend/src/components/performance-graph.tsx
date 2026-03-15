@@ -281,9 +281,11 @@ function NodeMetrics({ node }: { node: GraphNodeData }) {
 
 function NodeShell({
   node,
+  selected,
   children,
 }: {
   node: GraphNodeData;
+  selected?: boolean;
   children?: React.ReactNode;
 }) {
   const config = NODE_TYPE_CONFIG[node.node_type] ?? NODE_TYPE_CONFIG.function;
@@ -295,10 +297,11 @@ function NodeShell({
       <Handle type="target" position={Position.Left} className="!opacity-0 !w-2 !h-2 !border-0" />
       
       <div
-        className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px]"
+        className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px] transition-all duration-200"
         style={{
           background: "var(--color-dark)",
-          border: `2px solid ${severityColor}`,
+          border: selected ? `2px solid var(--color-accent-blue)` : `2px solid ${severityColor}`,
+          boxShadow: selected ? `0 0 15px var(--color-accent-blue)` : undefined,
         }}
       >
         {/* Accent bar + header */}
@@ -340,10 +343,10 @@ function NodeShell({
 /*  Custom node components                                             */
 /* ------------------------------------------------------------------ */
 
-const ApiNode = memo(function ApiNode({ data }: NodeProps) {
+const ApiNode = memo(function ApiNode({ data, selected }: NodeProps) {
   const node = (data as unknown as SemanticNodeData).graphNode;
   return (
-    <NodeShell node={node}>
+    <NodeShell node={node} selected={selected}>
       {node.metadata && (
         <div className="flex items-center gap-1.5 text-[10px]">
           {node.metadata.method && (
@@ -368,10 +371,10 @@ const ApiNode = memo(function ApiNode({ data }: NodeProps) {
   );
 });
 
-const LlmNode = memo(function LlmNode({ data }: NodeProps) {
+const LlmNode = memo(function LlmNode({ data, selected }: NodeProps) {
   const node = (data as unknown as SemanticNodeData).graphNode;
   return (
-    <NodeShell node={node}>
+    <NodeShell node={node} selected={selected}>
       {node.metadata && (
         <div className="space-y-0.5 text-[10px]">
           {node.metadata.model && (
@@ -397,10 +400,10 @@ const LlmNode = memo(function LlmNode({ data }: NodeProps) {
   );
 });
 
-const DbNode = memo(function DbNode({ data }: NodeProps) {
+const DbNode = memo(function DbNode({ data, selected }: NodeProps) {
   const node = (data as unknown as SemanticNodeData).graphNode;
   return (
-    <NodeShell node={node}>
+    <NodeShell node={node} selected={selected}>
       {node.metadata && (
         <div className="flex items-center gap-1.5 text-[10px]">
           {node.metadata.operation && (
@@ -425,7 +428,7 @@ const DbNode = memo(function DbNode({ data }: NodeProps) {
   );
 });
 
-const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
+const ConditionNode = memo(function ConditionNode({ data, selected }: NodeProps) {
   const node = (data as unknown as SemanticNodeData).graphNode;
   const config = NODE_TYPE_CONFIG.condition;
   const severityColor = SEVERITY_COLORS[node.severity || "low"] || DEFAULT_EDGE_COLOR;
@@ -434,10 +437,11 @@ const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
     <>
       <Handle type="target" position={Position.Left} className="!opacity-0 !w-2 !h-2 !border-0" />
       <div
-        className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px]"
+        className="rounded-lg overflow-hidden text-light min-w-[180px] max-w-[240px] transition-all duration-200"
         style={{
           background: "var(--color-dark)",
-          border: `2px solid ${severityColor}`,
+          border: selected ? `2px solid var(--color-accent-blue)` : `2px solid ${severityColor}`,
+          boxShadow: selected ? `0 0 15px var(--color-accent-blue)` : undefined,
         }}
       >
         <div
@@ -509,10 +513,10 @@ const ConditionNode = memo(function ConditionNode({ data }: NodeProps) {
   );
 });
 
-const FunctionNode = memo(function FunctionNode({ data }: NodeProps) {
+const FunctionNode = memo(function FunctionNode({ data, selected }: NodeProps) {
   const node = (data as unknown as SemanticNodeData).graphNode;
   return (
-    <NodeShell node={node}>
+    <NodeShell node={node} selected={selected}>
       {node.inputs && (
         <div>
           <div className="text-[9px] uppercase tracking-wider opacity-30 mb-0.5">
@@ -625,13 +629,29 @@ const edgeTypes = {
 interface PerformanceGraphProps {
   graphData: GraphData | null;
   variant?: "card" | "fullscreen";
+  selectedNodeIds?: string[];
+  onNodeClick?: (nodeId: string) => void;
 }
 
-export function PerformanceGraph({ graphData, variant = "card" }: PerformanceGraphProps) {
-  const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
-    if (!graphData) return { nodes: [], edges: [] };
-    return getLayoutedElements(graphData);
+export function PerformanceGraph({ 
+  graphData, 
+  variant = "card", 
+  selectedNodeIds, 
+  onNodeClick 
+}: PerformanceGraphProps) {
+  const { layoutedNodes, edges } = useMemo<{ layoutedNodes: Node[]; edges: Edge[] }>(() => {
+    if (!graphData) return { layoutedNodes: [], edges: [] };
+    const res = getLayoutedElements(graphData);
+    return { layoutedNodes: res.nodes, edges: res.edges };
   }, [graphData]);
+
+  const nodes = useMemo(() => {
+    if (!selectedNodeIds) return layoutedNodes;
+    return layoutedNodes.map(n => ({
+      ...n,
+      selected: selectedNodeIds.includes(n.id)
+    }));
+  }, [layoutedNodes, selectedNodeIds]);
 
   if (!graphData) {
     if (variant === "fullscreen") {
@@ -657,6 +677,11 @@ export function PerformanceGraph({ graphData, variant = "card" }: PerformanceGra
     );
   }
 
+  const handleNodeClick = useMemo(() => {
+    if (!onNodeClick) return undefined;
+    return (_: React.MouseEvent, node: Node) => onNodeClick(node.id);
+  }, [onNodeClick]);
+
   const flowProps = {
     nodes,
     edges,
@@ -664,6 +689,7 @@ export function PerformanceGraph({ graphData, variant = "card" }: PerformanceGra
     edgeTypes,
     fitView: true,
     proOptions: { hideAttribution: true },
+    onNodeClick: handleNodeClick,
   };
 
   if (variant === "fullscreen") {

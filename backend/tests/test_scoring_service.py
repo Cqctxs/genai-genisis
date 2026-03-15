@@ -341,7 +341,7 @@ class TestOutputShape:
         assert 0 <= score.time_score <= 8000
         assert 0 <= score.memory_score <= 6000
         assert 0 <= score.api_score <= 6000
-        assert 1000 <= score.overall_after <= 20000
+        assert 1000 <= score.overall_after <= 10000
 
 
 # ---------------------------------------------------------------------------
