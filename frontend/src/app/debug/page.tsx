@@ -335,7 +335,6 @@ const FAKE_COMPARISON: ComparisonReport = {
     overall_after: 8940,
     time_score: 91,
     time_score_before: 35,
-    time_score_before: 35,
     memory_score: 85,
     memory_score_before: 28,
     api_score: 78,
@@ -716,12 +715,7 @@ export default function DebugPage() {
                   </Button>
                 ))}
               </div>
-              <ErrorBoundary>
-                <LiveTelemetry
-                  phase={telemetryPhase}
-                  messages={FAKE_MESSAGES}
-                />
-              </ErrorBoundary>
+              {/* ErrorBoundary / LiveTelemetry removed */}
             </Section>
 
             {/* Performance Graph */}

@@ -21,25 +21,28 @@ interface ScoreDashboardProps {
 function AnimatedScore({
   target,
   duration = 2,
+  decimals = 0,
 }: {
   target: number;
   duration?: number;
+  decimals?: number;
 }) {
   const [value, setValue] = useState(0);
 
   useEffect(() => {
     const start = Date.now();
+    const factor = Math.pow(10, decimals);
     const animate = () => {
       const elapsed = (Date.now() - start) / 1000;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setValue(Math.round(target * eased));
+      setValue(Math.round(target * eased * factor) / factor);
       if (progress < 1) requestAnimationFrame(animate);
     };
     animate();
-  }, [target, duration]);
+  }, [target, duration, decimals]);
 
-  return <span>{value.toLocaleString()}</span>;
+  return <span>{value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}</span>;
 }
 
 function SubScoreBar({
@@ -47,14 +50,12 @@ function SubScoreBar({
   before,
   value,
   max,
-  weight,
   color,
 }: {
   label: string;
   before: number;
   value: number;
   max: number;
-  weight: string;
   color: string;
 }) {
   const pct = Math.min((value / max) * 100, 100);
@@ -66,12 +67,11 @@ function SubScoreBar({
         <span className="text-light/60">{label}</span>
         <span className="text-light/40 tabular-nums">
           <span className="text-light/25 line-through mr-1">
-            {before.toLocaleString()}
+            {Math.round(before).toLocaleString()}
           </span>
           <span className={improved ? "text-accent-green" : "text-accent-red"}>
-            {value.toLocaleString()}
+            {Math.round(value).toLocaleString()}
           </span>
-          <span className="text-light/25"> · {weight}</span>
         </span>
       </div>
       <div className="h-1.5 rounded-full bg-light/10 overflow-hidden relative">
@@ -131,72 +131,13 @@ function MetricCard({
   );
 }
 
-function ScoreExplanation() {
-  const [open, setOpen] = useState(false);
 
-  return (
-    <div className="text-center">
-      <button
-        onClick={() => setOpen(!open)}
-        className="text-[11px] text-light/30 hover:text-light/50 transition-colors inline-flex items-center gap-1"
-      >
-        How is this score calculated?
-        <svg
-          className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={2}
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M19.5 8.25l-7.5 7.5-7.5-7.5"
-          />
-        </svg>
-      </button>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          className="mt-3 text-left max-w-lg mx-auto space-y-2 text-[11px] text-light/40 leading-relaxed"
-        >
-          <p>
-            The{" "}
-            <span className="text-light/60 font-medium">CodeMark Score</span>{" "}
-            ranges from <span className="text-light/60">0 to 20,000</span>. A
-            typical unoptimized project scores between 5,000 and 8,000. Higher
-            is better.
-          </p>
-          <p>The score is composed of three weighted sub-scores:</p>
-          <ul className="list-none space-y-1 pl-0">
-            <li>
-              <span className="text-accent-blue font-medium">Time (40%)</span> —
-              Faster function execution produces a higher score.
-            </li>
-            <li>
-              <span className="text-accent-green font-medium">
-                Memory (30%)
-              </span>{" "}
-              — Lower peak memory usage produces a higher score.
-            </li>
-            <li>
-              <span className="text-accent-purple font-medium">
-                Complexity (30%)
-              </span>{" "}
-              — Better algorithmic complexity (e.g. O(n) vs O(n²)) produces a
-              higher score.
-            </li>
-          </ul>
-          <p>
-            Benchmarks run inside isolated cloud containers with fixed hardware,
-            ensuring reproducible measurements across runs.
-          </p>
-        </motion.div>
-      )}
-    </div>
-  );
+/** Format a number with appropriate sig figs — no trailing zeros, commas for large values */
+function fmt(n: number): string {
+  if (Math.abs(n) >= 1000) return Math.round(n).toLocaleString();
+  if (Math.abs(n) >= 10) return n.toFixed(1);
+  if (Math.abs(n) >= 1) return parseFloat(n.toFixed(2)).toString();
+  return parseFloat(n.toFixed(2)).toString();
 }
 
 export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
@@ -217,15 +158,13 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
       <Card className="bg-light/5">
         <CardContent className="py-8">
           <div className="text-center space-y-4">
-            <p className="text-xs uppercase tracking-widest text-light/40">
-              CodeMark Score
+            <p className="text-xs font-semibold uppercase tracking-widest text-accent-blue/80">
+              Total Execution Time
             </p>
-            <div className="flex items-center justify-center gap-6">
-              <div className="text-2xl text-light/40">
-                <AnimatedScore
-                  target={benchy_score.overall_before}
-                  duration={1}
-                />
+            <div className="flex items-center justify-center gap-4">
+              <div className="text-2xl text-light/40 flex items-baseline gap-1">
+                <AnimatedScore target={totalOldTime} duration={1} />
+                <span className="text-sm">ms</span>
               </div>
               <svg
                 className="w-6 h-6 text-light/20"
@@ -244,19 +183,51 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: 0.5, duration: 0.5 }}
-                className="text-5xl font-bold text-accent-purple"
+                className="text-5xl font-bold text-accent-blue flex items-baseline gap-2"
               >
-                <AnimatedScore target={benchy_score.overall_after} />
+                <AnimatedScore target={totalNewTime} />
+                <span className="text-2xl font-medium opacity-60">ms</span>
               </motion.div>
             </div>
 
-            <div className="max-w-xs mx-auto space-y-2 pt-2">
+            <p className="text-xs font-semibold uppercase tracking-widest text-accent-green/80 mt-6">
+              Total Peak Memory
+            </p>
+            <div className="flex items-center justify-center gap-4">
+              <div className="text-2xl text-light/40 flex items-baseline gap-1">
+                <AnimatedScore target={totalOldMem} duration={1} decimals={1} />
+                <span className="text-sm">MB</span>
+              </div>
+              <svg
+                className="w-6 h-6 text-light/20"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
+                />
+              </svg>
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.5, duration: 0.5 }}
+                className="text-5xl font-bold text-accent-green flex items-baseline gap-2"
+              >
+                <AnimatedScore target={totalNewMem} decimals={1} />
+                <span className="text-2xl font-medium opacity-60">MB</span>
+              </motion.div>
+            </div>
+
+            <div className="max-w-xs mx-auto space-y-2 pt-6">
               <SubScoreBar
                 label="Time"
                 before={benchy_score.time_score_before}
                 value={benchy_score.time_score}
                 max={20000}
-                weight="40%"
                 color="var(--color-accent-blue)"
               />
               <SubScoreBar
@@ -264,7 +235,6 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 before={benchy_score.memory_score_before}
                 value={benchy_score.memory_score}
                 max={20000}
-                weight="30%"
                 color="var(--color-accent-green)"
               />
               <SubScoreBar
@@ -272,12 +242,9 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                 before={benchy_score.api_score_before}
                 value={benchy_score.api_score}
                 max={20000}
-                weight="30%"
                 color="var(--color-accent-purple)"
               />
             </div>
-
-            <ScoreExplanation />
           </div>
         </CardContent>
       </Card>
@@ -344,40 +311,40 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
         <div className="space-y-3">
           <MetricCard
             label="Execution Time"
-            before={totalOldTime.toFixed(1)}
-            after={totalNewTime.toFixed(1)}
-            unit="ms"
+            before={fmt(totalOldTime)}
+            after={fmt(totalNewTime)}
+            unit=" ms"
             isNegative={totalNewTime > totalOldTime}
             improvement={(() => {
-              const pct = (1 - totalNewTime / totalOldTime) * 100;
-              return pct >= 0
-                ? `${pct.toFixed(0)}% faster`
-                : `${Math.abs(pct).toFixed(0)}% slower`;
+              const diff = totalOldTime - totalNewTime;
+              return diff >= 0
+                ? `${fmt(diff)} ms faster`
+                : `${fmt(Math.abs(diff))} ms slower`;
             })()}
           />
           <MetricCard
             label="Memory Peak"
-            before={totalOldMem.toFixed(1)}
-            after={totalNewMem.toFixed(1)}
+            before={fmt(totalOldMem)}
+            after={fmt(totalNewMem)}
             unit=" MB"
             isNegative={totalNewMem > totalOldMem}
             improvement={(() => {
-              const pct = (1 - totalNewMem / totalOldMem) * 100;
-              return pct >= 0
-                ? `-${pct.toFixed(0)}% memory`
-                : `+${Math.abs(pct).toFixed(0)}% memory`;
+              const diff = totalOldMem - totalNewMem;
+              return diff >= 0
+                ? `-${fmt(diff)} MB`
+                : `+${fmt(Math.abs(diff))} MB`;
             })()}
           />
           <MetricCard
             label="Avg Speedup"
             before="1.0"
-            after={avgSpeedup.toFixed(1)}
+            after={fmt(avgSpeedup)}
             unit="x"
             isNegative={avgSpeedup < 1}
             improvement={
               avgSpeedup >= 1
-                ? `${avgSpeedup.toFixed(1)}x faster on average`
-                : `${(1 / avgSpeedup).toFixed(1)}x slower on average`
+                ? `${fmt(avgSpeedup)}x faster on average`
+                : `${fmt(1 / avgSpeedup)}x slower on average`
             }
           />
         </div>
@@ -423,24 +390,24 @@ export function ScoreDashboard({ comparison }: ScoreDashboardProps) {
                         </div>
                       </td>
                       <td className="text-right py-2 px-3 text-light/40">
-                        {f.old_time_ms.toFixed(1)}ms
+                        {fmt(f.old_time_ms)} ms
                       </td>
                       <td className="text-right py-2 px-3 text-light">
-                        {f.new_time_ms.toFixed(1)}ms
+                        {fmt(f.new_time_ms)} ms
                       </td>
                       <td
                         className={`text-right py-2 px-3 font-medium ${f.speedup_factor >= 1 ? "text-accent-green" : "text-accent-red"}`}
                       >
                         {f.speedup_factor >= 1
-                          ? `${f.speedup_factor.toFixed(1)}x`
-                          : `${(1 / f.speedup_factor).toFixed(1)}x slower`}
+                          ? `${fmt(f.speedup_factor)}x`
+                          : `${fmt(1 / f.speedup_factor)}x slower`}
                       </td>
                       <td
                         className={`text-right py-2 pl-3 ${f.memory_reduction_pct >= 0 ? "text-accent-green" : "text-accent-red"}`}
                       >
                         {f.memory_reduction_pct >= 0
-                          ? `-${f.memory_reduction_pct.toFixed(0)}%`
-                          : `+${Math.abs(f.memory_reduction_pct).toFixed(0)}%`}
+                          ? `-${Math.round(f.memory_reduction_pct)}%`
+                          : `+${Math.round(Math.abs(f.memory_reduction_pct))}%`}
                       </td>
                     </tr>
                   ))}
