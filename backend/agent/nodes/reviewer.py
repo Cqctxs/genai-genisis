@@ -48,7 +48,7 @@ class ReviewResult(BaseModel):
     summary: str = Field(description="One-sentence overall assessment")
 
 
-REVIEW_TIMEOUT_S = 15
+REVIEW_TIMEOUT_S = 120
 
 
 async def review_optimization(

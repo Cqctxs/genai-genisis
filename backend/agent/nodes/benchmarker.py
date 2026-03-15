@@ -22,6 +22,7 @@ The benchmark script runs inside an isolated sandbox where:
 - Do NOT call pip install or npm install — dependencies are pre-installed.
 - If a function requires database connections, network I/O, or external services to run,
   create minimal mock/stub data so the function's core logic can still execute.
+  **CRITICAL**: If you are mocking an I/O bound external call (like network or DB), your mock MUST include realistic artificial latency (e.g., `time.sleep(0.05)` or `await new Promise(r => setTimeout(r, 50))`) so concurrency optimizations can demonstrate actual speedup without pure CPU lock overhead.
 
 ## Rules
 
@@ -36,9 +37,14 @@ has not changed. This is critical for detecting when optimizations break functio
 
 1. Before the timing loop, call the function ONCE with a fixed, deterministic input.
 2. Capture the return value (or the mutated state if the function returns void).
-3. Serialize the result into a stable string representation:
-   - For Python: use `json.dumps(result, sort_keys=True, default=str)`
-   - For JavaScript: use `JSON.stringify(result)` (with sorted keys if it's an object)
+3. Serialize the result into a stable string representation.
+   **IMPORTANT**: If the result is a large object (list/array/dict with >100 elements),
+   TRUNCATE or SAMPLE it before serializing to avoid blocking CPU time:
+   - For Python: `s = result[:100] if isinstance(result, (list, tuple)) else result;
+     serialized = json.dumps(s, sort_keys=True, default=str)[:10000]`
+   - For JavaScript: `let s = Array.isArray(result) ? result.slice(0, 100) : result;
+     let serialized = JSON.stringify(s).slice(0, 10000)`
+   This keeps fingerprinting under 1ms even for massive outputs.
 4. Hash the serialized string to produce a short fingerprint:
    - For Python: `import hashlib; fingerprint = hashlib.sha256(serialized.encode()).hexdigest()[:16]`
    - For JavaScript: use `require('crypto').createHash('sha256').update(serialized).digest('hex').slice(0, 16)`
@@ -68,7 +74,8 @@ let _checksum = 0;
 const start = performance.now();
 for (let i = 0; i < iterations; i++) {
     const result = targetFunction(testData);
-    _checksum += (typeof result === 'object' ? JSON.stringify(result).length : Number(result)) || 1;
+    // Use a CHEAP accumulator — avoid JSON.stringify inside the loop!
+    _checksum += (typeof result === 'number' ? result : (Array.isArray(result) ? result.length : 1));
 }
 const elapsed = performance.now() - start;
 if (_checksum === -Infinity) console.log(_checksum);
@@ -80,33 +87,74 @@ _checksum = 0
 start = time.perf_counter()
 for _ in range(iterations):
     result = target_function(test_data)
-    _checksum += len(str(result)) if result is not None else 1
+    # Use a CHEAP accumulator — avoid str(result) or json.dumps inside the loop!
+    _checksum += len(result) if hasattr(result, '__len__') else (result if isinstance(result, (int, float)) else 1)
 elapsed = time.perf_counter() - start
 assert _checksum >= 0, _checksum
 ```
 
+IMPORTANT: The anti-DCE accumulator MUST be cheap (O(1) per iteration). NEVER call
+`JSON.stringify`, `str()`, `json.dumps`, or `len(str(result))` inside the timing loop — these
+serialization calls can dominate execution time for functions returning large objects, making
+the benchmark measure serialization cost instead of the actual function.
+
+## NON-UNIFORM MOCK DATA (REQUIRED)
+
+Runtime engines (V8, CPython) aggressively optimize arrays filled with identical values.
+To capture real-world performance, ALL generated test data MUST have high variance:
+
+- Seed a PRNG for reproducibility (Python: `random.seed(42)`, JS: use a simple LCG or `seedrandom`).
+- For numeric arrays: generate values with `(i * 2654435761) % N` or `random.randint(0, N)`.
+  NEVER use `[0] * N`, `Array(N).fill(0)`, or any constant-fill pattern.
+- For string arrays: vary lengths and characters, e.g. `chr(65 + i % 26) * (i % 20 + 1)`.
+- For dicts/objects: use varied keys AND values; do not repeat identical entries.
+- For nested structures: vary inner sizes, not just the outer container.
+
+Bad  (uniform): `data = [1] * 10000`
+Good (varied):  `random.seed(42); data = [random.randint(0, 100000) for _ in range(10000)]`
+
+Bad  (uniform): `const data = Array(10000).fill({key: "a", val: 1})`
+Good (varied):  `const data = Array.from({length: 10000}, (_, i) => ({key: "k" + ((i * 2654435761) >>> 0) % 10000, val: i * 7 % 9973}))`
+
 ## DYNAMIC ITERATION SCALING (REQUIRED)
 
-Do NOT hardcode the number of iterations. Use this pattern:
-1. Run the function ONCE as a warmup and measure the single-call time.
-2. If single_call < 0.1ms: use 10,000 iterations
-3. If single_call < 1ms: use 5,000 iterations
-4. If single_call < 10ms: use 500 iterations
-5. If single_call < 100ms: use 50 iterations
-6. If single_call >= 100ms: use 10 iterations
-7. Ensure total estimated runtime stays under 25 seconds.
-8. The reported avg_time_ms MUST be > 0.001. If it rounds to 0, increase input size.
+Do NOT hardcode the number of iterations. Use a dynamic formula that targets ~4 seconds of total timing:
 
-## INPUT SIZE — THIS IS CRITICAL
+1. Run the function ONCE as a warmup and measure `single_call_ms`.
+2. Compute iterations dynamically:
+   - Python:  `iterations = max(5, int(4000 / single_call_ms))`
+   - JavaScript:  `const iterations = Math.max(5, Math.floor(4000 / single_call_ms))`
+3. This automatically adapts: fast functions get many iterations, slow ones get few.
+4. Ensure total estimated runtime stays heavily under 10 seconds.
+5. The reported avg_time_ms MUST be > 0.001. If it rounds to 0, increase input size.
 
-- Use input sizes large enough to reveal algorithmic complexity differences.
-- For array/list operations: N = 10 000 minimum (50 000 preferred).
-- For nested loop / O(n²) patterns: N = 5 000–10 000 so quadratic cost is measurable.
-- For map/dict lookups: N = 50 000+ entries.
+## INPUT SIZE — COMPLEXITY-AWARE BOUNDS (CRITICAL)
+
+Choose input sizes based on the algorithmic complexity of the function being benchmarked.
+The script runs under a hard 15-second timeout, so quadratic or worse algorithms with large
+inputs will crash before any iterations run.
+
+### O(1) / O(log n) — constant or logarithmic:
+- N = 50,000+ is fine. Prefer 50,000.
+
+### O(n) / O(n log n) — linear or linearithmic:
+- N = 10,000 minimum, 50,000 preferred.
+
+### O(n²) — quadratic (nested loops, bubble sort, etc.):
+- N = 500–1,000 MAXIMUM. Values above 1,000 will exceed the timeout.
+- Prefer N = 700 as a balance between measurability and safety.
+
+### O(n³) or worse — cubic / exponential:
+- N = 100–300 MAXIMUM. Keep it small enough for a single call to finish in < 1 second.
+
+### General rules:
+- For map/dict lookups (O(1) amortised): N = 50,000+ entries.
 - For I/O-bound code: simulate at least 20 sequential operations.
-- For string operations: use strings of 10 000+ characters.
-- NEVER use trivially small inputs (N < 100). Small inputs hide algorithmic improvements
+- For string operations on linear algorithms: use strings of 10,000+ characters.
+- NEVER use trivially small inputs (N < 50). Small inputs hide algorithmic improvements
   behind constant-factor overhead and produce misleading benchmark results.
+- When in doubt about the complexity, start with N = 1,000 and verify the warmup call
+  finishes well under 2 seconds. If it takes longer, reduce N.
 
 ## Output Format
 
