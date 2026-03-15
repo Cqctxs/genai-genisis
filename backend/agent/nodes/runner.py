@@ -4,7 +4,7 @@ import traceback
 
 import structlog
 
-from agent.schemas import BenchmarkResult, BenchmarkScript
+from agent.schemas import BenchmarkResult, BenchmarkScript, slim_ast_for_prompt
 from agent.state import AgentState
 from services.modal_service import run_benchmark
 from services.github_service import read_file
@@ -53,11 +53,11 @@ async def _regenerate_benchmark(
     from agent.nodes.benchmarker import BENCHMARK_PROMPT
     from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
-    filtered_ast = {
+    filtered_ast = slim_ast_for_prompt({
         "functions": [f for f in ast_map.get("functions", []) if f.get("file") == bench.file],
         "classes": [c for c in ast_map.get("classes", []) if c.get("file") == bench.file],
         "imports": [i for i in ast_map.get("imports", []) if i.get("file") == bench.file],
-    }
+    })
 
     # Detect timeout errors and add specific guidance
     is_timeout = "timeout" in error_msg.lower() or "timed out" in error_msg.lower()
