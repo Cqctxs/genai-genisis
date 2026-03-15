@@ -335,7 +335,6 @@ const FAKE_COMPARISON: ComparisonReport = {
     overall_after: 8940,
     time_score: 91,
     time_score_before: 35,
-    time_score_before: 35,
     memory_score: 85,
     memory_score_before: 28,
     api_score: 78,
@@ -432,12 +431,10 @@ export default function DebugPage() {
       <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden">
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
           <div className="flex items-center gap-3">
-            <a
-              href="/"
-              className="font-serif text-xl hover:text-light/80 transition-colors"
-            >
-              Benchy
-            </a>
+            <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity text-3xl">
+            <img src="/images/benchy_light.svg" alt="Benchy" className="h-8"/>
+            <span className="font-serif">Benchy</span>
+          </a>
             <span className="text-xs font-mono text-light/40">debug mode</span>
           </div>
           <a
@@ -717,9 +714,9 @@ export default function DebugPage() {
                 ))}
               </div>
               <ErrorBoundary>
-                <LiveTelemetry
+                <ProgressStepper
                   phase={telemetryPhase}
-                  messages={FAKE_MESSAGES}
+                  currentMessage={FAKE_MESSAGES[FAKE_MESSAGES.length - 1]?.message ?? ""}
                 />
               </ErrorBoundary>
             </Section>
