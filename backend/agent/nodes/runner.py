@@ -74,6 +74,13 @@ The script took too long to run. The function has high algorithmic complexity.
 - Smaller inputs reveal algorithmic differences better than slow large inputs
 """
 
+    is_attribute_error = "AttributeError" in error_msg
+    if is_attribute_error:
+        timeout_guidance += """\n### CRITICAL: AttributeError from Mock Patch
+If you used `unittest.mock.patch` without importing the module first, it will crash. 
+**You MUST `import module` before patching any of its attributes.** (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Or completely remove the use of `patch` and use manual stubbing."""
+
+
     fix_prompt = f"""## Previous Benchmark Script FAILED at Runtime
 
 The following benchmark script for `{bench.target_function}` crashed when executed

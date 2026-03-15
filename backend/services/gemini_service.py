@@ -11,9 +11,8 @@ from pydantic_ai.models.google import GoogleModelSettings
 
 log = structlog.get_logger()
 
-GEMINI_PRO = "google-gla:gemini-3.1-pro-preview"
+GEMINI_PRO = "google-gla:gemini-3-flash-preview"
 GEMINI_FLASH = "google-gla:gemini-3-flash-preview"
-GEMINI_THINKING = "google-gla:gemini-2.5-flash-preview"
 
 
 def _output_type_label(output_type: type) -> str:
