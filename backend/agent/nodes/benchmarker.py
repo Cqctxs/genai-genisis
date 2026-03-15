@@ -17,6 +17,9 @@ in a codebase, generate profiling scripts that measure the execution time of eac
 The benchmark script runs inside an isolated sandbox where:
 - The repo's source files are available in the working directory (same layout as the repo).
 - The repo's dependencies from requirements.txt / package.json ARE already installed.
+- PYTHONPATH is set to the working directory, but for extra safety, **your Python benchmark script MUST begin with**:
+  `import sys, os; sys.path.insert(0, os.getcwd())`
+  This ensures the repo's local modules are always found before any system site-packages.
 - You MUST import from the repo normally using the actual file path provided (e.g. if the File is `advanced_demo/analytics.py`, use `from advanced_demo.analytics import process_data` in Python or `require('./advanced_demo/analytics')` in JS).
 - Do NOT use generic names like `from hotspot_1 import ...`. The file is named exactly what is passed in the "File:" field.
 - Do NOT reimplement, inline, or stub out functions that exist in the repo.
@@ -25,6 +28,8 @@ The benchmark script runs inside an isolated sandbox where:
   create minimal mock/stub data so the function's core logic can still execute.
   **CRITICAL**: If you are mocking an I/O bound external call (like network or DB), your mock MUST include realistic artificial latency (e.g., `time.sleep(0.05)` or `await new Promise(r => setTimeout(r, 50))`) so concurrency optimizations can demonstrate actual speedup without pure CPU lock overhead.
 - If you mock functions using `unittest.mock.patch`, you MUST import the module you are patching FIRST. (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Otherwise it will fail with AttributeError.
+- **CRITICAL MOCK RULE**: If you use `unittest.mock.patch` or `MagicMock` to mock functions that are passed as arguments to other functions, you MUST explicitly assign a `__name__` attribute to the mock object (e.g., `mock_function.__name__ = 'my_function'`) to prevent `AttributeError` during introspection such as `func.__name__`.
+- **PREFER REAL CODE OVER MOCKING**: Do NOT aggressively mock internal target functions. Always prefer executing the actual repository code. Only mock external dependencies (network, database, file system) that would hang or destroy the environment. Mocking the function you are benchmarking defeats the purpose of the benchmark.
 
 ## Rules
 
