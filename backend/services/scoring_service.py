@@ -24,9 +24,9 @@ log = structlog.get_logger()
 # Tuning knobs
 # ---------------------------------------------------------------------------
 
-NOISE_FLOOR_MS = 0.5
+NOISE_FLOOR_MS = 0.005
 NOISE_FLOOR_PCT = 0.05
-MAX_SPEEDUP_CAP = 100.0
+MAX_SPEEDUP_CAP = 10000.0
 
 SEVERITY_DEDUCTION = {"critical": 800, "high": 500, "medium": 300, "low": 100}
 SEVERITY_WEIGHT = {"critical": 1.5, "high": 1.2, "medium": 1.0, "low": 0.7}
@@ -84,6 +84,8 @@ def _compute_speedup(old_time: float, new_time: float) -> float:
     """Compute speedup factor with noise-floor handling.
 
     Returns 1.0 (neutral) when the difference is within measurement noise.
+    Uses logarithmic compression for extreme speedups (>100x) to avoid
+    hard-capping genuine algorithmic paradigm shifts.
     """
     if old_time <= 0 and new_time <= 0:
         return 1.0
@@ -99,7 +101,12 @@ def _compute_speedup(old_time: float, new_time: float) -> float:
     if diff < max(NOISE_FLOOR_MS, old_time * NOISE_FLOOR_PCT):
         return 1.0
 
-    return min(old_time / new_time, MAX_SPEEDUP_CAP)
+    raw = old_time / new_time
+    # Logarithmic compression: linear up to 100x, then log-scaled beyond
+    if raw <= 100.0:
+        return min(raw, MAX_SPEEDUP_CAP)
+    compressed = 100.0 + math.log2(raw / 100.0) * 50.0
+    return min(compressed, MAX_SPEEDUP_CAP)
 
 
 def _is_time_space_tradeoff(speedup: float, memory_ratio: float) -> bool:
@@ -225,7 +232,7 @@ def compute_benchy_score(
         log_sum = sum(math.log(max(s, 0.01)) for s in speedups)
         geo_mean = math.exp(log_sum / len(speedups))
         time_delta = math.log2(max(geo_mean, 0.01)) * 2500
-        time_delta = max(-2000, min(time_delta, 4800))
+        time_delta = max(-2000, min(time_delta, 6500))
     else:
         time_delta = 0.0
 
@@ -261,17 +268,20 @@ def compute_benchy_score(
         raw_pts = cat_pts * sev_mult
 
         # Scale the reward by actual benchmark outcome.
-        # speedup > 1.05  → scales up
+        # speedup > 1.05  → scales up, with log growth for extreme speedups
         # speedup <= 1.05 → 0  (Requires real actual data improvement)
         fn_speedup = speedup_by_fn.get(fn, 1.0)
         if fn_speedup > 1.05:
-            scale = min((fn_speedup - 1.05) * 5.0, 1.0)
+            linear = min((fn_speedup - 1.05) * 5.0, 1.0)
+            # Logarithmic bonus for large speedups (>2x)
+            log_bonus = math.log2(fn_speedup) * 0.3 if fn_speedup > 2.0 else 0.0
+            scale = min(linear + log_bonus, 3.0)
         else:
             scale = 0.0
 
         api_delta += raw_pts * scale
 
-    api_delta = min(api_delta, 3000)
+    api_delta = min(api_delta, 5000)
     api_score = max(0, min(api_base + api_delta, 6000))
 
     # ------------------------------------------------------------------
