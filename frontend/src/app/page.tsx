@@ -3,6 +3,7 @@
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import AsciiBenchyScene from "@/components/benchy-ascii";
 
 export default function LandingPage() {
   const { data: session, status } = useSession();
@@ -20,7 +21,10 @@ export default function LandingPage() {
       <div className="flex-1 min-h-0 bg-dark text-light rounded-xl flex flex-col overflow-hidden">
         {/* Top nav — pinned */}
         <nav className="shrink-0 flex items-center justify-between px-6 sm:px-10 py-4 border-b border-light/10">
-          <span className="font-serif text-xl">Benchy</span>
+          <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity text-3xl">
+            <img src="/images/benchy_light.svg" alt="Benchy" className="h-8"/>
+            <span className="font-serif">Benchy</span>
+          </a>
           <div className="flex items-center gap-6">
             <a href="/debug" className="text-xs font-mono text-light/40 hover:text-light/70 transition-colors">
               /debug
@@ -40,9 +44,14 @@ export default function LandingPage() {
           <div className="max-w-3xl space-y-16 sm:space-y-20">
             {/* Logo + tagline */}
             <div className="space-y-6">
-              <h1 className="font-serif text-6xl sm:text-8xl lg:text-9xl leading-[0.9] tracking-tight">
-                Benchy
-              </h1>
+              <div className="flex items-center gap-6">
+                <h1 className="font-serif text-6xl sm:text-8xl lg:text-9xl leading-[0.9] tracking-tight">
+                  Benchy
+                </h1>
+                <div className="h-32 w-32 sm:h-48 sm:w-48 lg:h-56 lg:w-56 shrink-0">
+                  <AsciiBenchyScene color="#faefe0" />
+                </div>
+              </div>
               <p className="text-light/50 text-sm sm:text-base max-w-md leading-relaxed">
                 AI-powered performance analysis and optimization for your codebase.
               </p>
