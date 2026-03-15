@@ -78,6 +78,7 @@ CRITICAL SANDBOX CONSTRAINTS:
   Do NOT run `npm install`, `pip install`, or any package manager commands in the script.
   Doing so will crash the container.
 - You MUST import the target function from the repo using the exact file path provided in the "File:" section. For instance, if the file is `advanced_demo/data_generator.py`, use `from advanced_demo.data_generator import function_name` in Python or `require('./advanced_demo/data_generator')` in JS. Do NOT use fake names like `from hotspot_1`.
+- **FILE I/O IS ALLOWED**: The sandbox has an ephemeral filesystem. **Do NOT mock `open()` or `builtins.open`** or filesystem operations (e.g. `fs.writeFileSync`). Creating, reading, and writing temporary files in the working directory is expected and required for accurate I/O benchmarking.
 - Create mock/stub data instead of importing real modules when measuring pure logic.
 - If you mock functions using `unittest.mock.patch`, you MUST import the module you are patching FIRST. (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Otherwise it will fail with AttributeError.
   CRITICAL JSON & ESCAPING CONSTRAINTS:

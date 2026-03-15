@@ -259,6 +259,10 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
             timeout=DEP_INSTALL_TIMEOUT,
         )
 
+    # Sanitize out builtins.open patches to prevent LLM from bypassing the ephemeral disk.
+    # We silently redirect the patch to `builtins.id` so open() remains unmocked.
+    code = re.sub(r"patch\(\s*['\"]builtins\.open['\"]", "patch('builtins.id'", code)
+
     with open(os.path.join(workdir, "_benchmark_inner.py"), "w") as f:
         f.write(code)
 

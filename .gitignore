@@ -58,5 +58,4 @@ plan.md
 
 .railtracks/
 
-# logs
-backend/logs/
+*.jsonl

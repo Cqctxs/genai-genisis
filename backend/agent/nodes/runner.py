@@ -87,6 +87,18 @@ mock_fn.__name__ = 'original_function_name'
 ```
 Prefer running the ACTUAL target function rather than mocking it. Only mock external I/O dependencies."""
 
+    is_io_error = "ValueError: I/O operation on" in error_msg
+    if is_io_error:
+        timeout_guidance += """\n### CRITICAL: ValueError on closed file/buffer
+You are likely trying to call `.getvalue()` or read from a `StringIO` or file object that has already been closed. (e.g., if you mocked `open` to return a `StringIO`, exiting the `with open(...)` block closes the `StringIO`, so `.getvalue()` will crash). 
+**DO NOT MOCK `open()`**. The sandbox has an ephemeral file system. Just write to a real temporary file (`"test.csv"`) and read from it natively!"""
+
+    is_key_error = "KeyError:" in error_msg
+    if is_key_error:
+        timeout_guidance += """\n### CRITICAL: KeyError during execution
+Your generated test data or mock object is missing a key expected by the function. Look at the traceback and the file content to determine what keys the function attempts to access. Update the dictionary or object generator in your benchmark script so that ALL required keys are populated with appropriate dummy types!"""
+
+
 
     fix_prompt = f"""## Previous Benchmark Script FAILED at Runtime
 
