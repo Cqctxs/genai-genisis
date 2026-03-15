@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { LiveTelemetry } from "@/components/live-telemetry";
+import { ProgressStepper } from "@/components/progress-stepper";
 import { PerformanceGraph } from "@/components/performance-graph";
 import { ScoreDashboard } from "@/components/score-dashboard";
 import { PullRequestView } from "@/components/comparison-view";
@@ -120,8 +120,11 @@ const FAKE_COMPARISON: ComparisonReport = {
     overall_before: 3420,
     overall_after: 8940,
     time_score: 91,
+    time_score_before: 35,
     memory_score: 85,
+    memory_score_before: 28,
     complexity_score: 78,
+    complexity_score_before: 42,
     radar_data: [
       { axis: "Execution Time", before: 35, after: 91 },
       { axis: "Memory Usage", before: 28, after: 85 },
@@ -396,8 +399,8 @@ export default function DebugPage() {
               <h2 className="text-2xl font-semibold tracking-tight mb-8">Feature Components</h2>
             </div>
 
-            {/* Live Telemetry */}
-            <Section title="Live Telemetry">
+            {/* Progress Stepper */}
+            <Section title="Progress Stepper">
               <div className="flex flex-wrap gap-2 mb-4">
                 {PHASES.map((p) => (
                   <Button
@@ -411,7 +414,10 @@ export default function DebugPage() {
                 ))}
               </div>
               <ErrorBoundary>
-                <LiveTelemetry phase={telemetryPhase} messages={FAKE_MESSAGES} />
+                <ProgressStepper
+                  phase={telemetryPhase}
+                  currentMessage={FAKE_MESSAGES[FAKE_MESSAGES.length - 1]?.message ?? ""}
+                />
               </ErrorBoundary>
             </Section>
 

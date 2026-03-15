@@ -3,18 +3,9 @@
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
-// @ts-expect-error - react-syntax-highlighter doesn't have type definitions
-import SyntaxHighlighter from "react-syntax-highlighter";
-// @ts-expect-error - react-syntax-highlighter doesn't have type definitions
-import { atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import { RepoInput } from "@/components/repo-input";
-import { LiveTelemetry } from "@/components/live-telemetry";
-import { PerformanceGraph } from "@/components/performance-graph";
-import { ScoreDashboard } from "@/components/score-dashboard";
-import { PullRequestView } from "@/components/comparison-view";
-import { ErrorBoundary } from "@/components/error-boundary";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { startAnalysis, streamJob, getResults, type JobResult } from "@/lib/api";
+import { ProgressStepper } from "@/components/progress-stepper";
+import { startAnalysis, streamJob } from "@/lib/api";
 import { toast } from "sonner";
 
 type Phase =
@@ -39,9 +30,7 @@ export default function DashboardPage() {
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [messages, setMessages] = useState<ProgressMessage[]>([]);
-  const [results, setResults] = useState<JobResult | null>(null);
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("telemetry");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -73,11 +62,10 @@ export default function DashboardPage() {
 
       setPhase("analyzing");
       setMessages([]);
-      setResults(null);
+      setError(null);
 
       try {
         const { job_id } = await startAnalysis(repoUrl, token, optimizationBias);
-        setJobId(job_id);
 
         streamJob(
           job_id,
@@ -93,42 +81,37 @@ export default function DashboardPage() {
               }
             }
             if (event.event === "complete") {
-              setPhase("complete");
-              getResults(job_id).then((r) => {
-                setResults(r);
-                setActiveTab("results");
-              });
+              router.push("/job/" + job_id);
             }
           },
-          (error) => {
+          (err) => {
             setPhase("error");
-            toast.error(error.message);
+            setError(err.message);
+            toast.error(err.message);
           },
           () => {
-            if (phase !== "error") {
-              getResults(job_id)
-                .then((r) => {
-                  setResults(r);
-                  setPhase("complete");
-                  setActiveTab("results");
-                })
-                .catch(() => {});
-            }
+            // onComplete fallback — redirect if not already in error
+            router.push("/job/" + job_id);
           }
         );
       } catch (err: any) {
         setPhase("error");
+        setError(err.message || "Failed to start analysis");
         toast.error(err.message || "Failed to start analysis");
       }
     },
-    [session, phase]
+    [session, router]
   );
+
+  const handleRetry = () => {
+    setPhase("idle");
+    setMessages([]);
+    setError(null);
+  };
 
   const statusText =
     phase === "idle"
       ? "● [✓] ready · select a repository"
-      : phase === "complete"
-      ? "● [✓] analysis complete"
       : phase === "error"
       ? "● [✗] error encountered"
       : `● [◎] ${phase}…`;
@@ -142,6 +125,9 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  const isRunning = phase !== "idle" && phase !== "error";
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1].message : "";
 
   return (
     <div className="h-screen bg-light p-3 sm:p-4 flex flex-col">
@@ -171,144 +157,37 @@ export default function DashboardPage() {
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 sm:px-10 py-8">
           <div className="max-w-7xl mx-auto w-full space-y-6">
-            <RepoInput
-              onAnalyze={handleAnalyze}
-              isLoading={phase !== "idle" && phase !== "complete" && phase !== "error"}
-              accessToken={(session as any)?.accessToken ?? null}
-            />
-
-            {phase !== "idle" && (
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="bg-light/5 border border-light/10">
-                  <TabsTrigger value="telemetry">Live Telemetry</TabsTrigger>
-                  <TabsTrigger value="graph">Performance Graph</TabsTrigger>
-                  <TabsTrigger value="results" disabled={!results}>
-                    Results
-                  </TabsTrigger>
-                  <TabsTrigger value="benchmarks" disabled={!results?.benchmark_details?.length}>
-                    Benchmarks
-                  </TabsTrigger>
-                  <TabsTrigger value="pr" disabled={!results}>
-                    Pull Request
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="telemetry" className="mt-4">
-                  <ErrorBoundary>
-                    <LiveTelemetry phase={phase} messages={messages} />
-                  </ErrorBoundary>
-                </TabsContent>
-
-                <TabsContent value="graph" className="mt-4">
-                  <ErrorBoundary>
-                    <PerformanceGraph graphData={results?.graph_data ?? null} />
-                  </ErrorBoundary>
-                </TabsContent>
-
-                <TabsContent value="results" className="mt-4">
-                  <ErrorBoundary>
-                    {results?.comparison && (
-                      <ScoreDashboard comparison={results.comparison} />
-                    )}
-                  </ErrorBoundary>
-                </TabsContent>
-
-                <TabsContent value="benchmarks" className="mt-4">
-                  <ErrorBoundary>
-                    {results?.benchmark_details && results.benchmark_details.length > 0 ? (
-                      <div className="space-y-4">
-                        {results.benchmark_details.map((detail, idx) => (
-                          <div key={idx} className="border border-light/10 rounded-lg p-4 bg-light/5 space-y-3">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <h3 className="font-mono text-sm font-semibold text-light">{detail.function_name}</h3>
-                                <p className="text-xs text-light/60 mt-1">{detail.file}</p>
-                              </div>
-                              <div className={`text-sm font-medium px-2 py-1 rounded ${detail.speedup_factor >= 1 ? 'bg-accent-green/20 text-accent-green' : 'bg-accent-red/20 text-accent-red'}`}>
-                                {detail.speedup_factor >= 1
-                                  ? `${detail.speedup_factor.toFixed(1)}x faster`
-                                  : `${(1 / detail.speedup_factor).toFixed(1)}x slower`}
-                              </div>
-                            </div>
-
-                            {detail.summary && (
-                              <div className="space-y-1">
-                                <p className="text-xs text-light/50">What this benchmark tests:</p>
-                                <p className="text-sm text-light/80 border-l-2 border-light/20 pl-3 py-1">
-                                  {detail.summary}
-                                </p>
-                              </div>
-                            )}
-
-                            <div className="grid grid-cols-2 gap-3 text-xs">
-                              <div className="bg-light/5 p-2 rounded">
-                                <span className="text-light/60">Before</span>
-                                <div className="text-light mt-1">
-                                  <p>{detail.before_time_ms.toFixed(2)}ms</p>
-                                  <p className="text-light/60">{detail.before_memory_mb.toFixed(1)}MB</p>
-                                </div>
-                              </div>
-                              <div className="bg-light/5 p-2 rounded">
-                                <span className="text-light/60">After</span>
-                                <div className="text-light mt-1">
-                                  <p>{detail.after_time_ms.toFixed(2)}ms</p>
-                                  <p className="text-light/60">{detail.after_memory_mb.toFixed(1)}MB</p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="space-y-2">
-                              <p className="text-xs text-light/50">Benchmark code ({detail.language}):</p>
-                              <div className="rounded overflow-hidden max-h-96">
-                                <SyntaxHighlighter
-                                  language={detail.language === "javascript" || detail.language === "typescript" ? "javascript" : "python"}
-                                  style={atomOneDark}
-                                  customStyle={{
-                                    margin: 0,
-                                    padding: "12px",
-                                    fontSize: "11px",
-                                    lineHeight: "1.5",
-                                    maxHeight: "400px",
-                                    overflow: "auto",
-                                  }}
-                                >
-                                  {detail.script_content}
-                                </SyntaxHighlighter>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 text-light/40">
-                        <p>No benchmark details available</p>
-                      </div>
-                    )}
-                  </ErrorBoundary>
-                </TabsContent>
-
-                <TabsContent value="pr" className="mt-4">
-                  <ErrorBoundary>
-                    {results && (
-                      <PullRequestView
-                        prUrl={results.pr_url ?? ""}
-                        optimizedFiles={results.optimized_files ?? {}}
-                        comparison={results.comparison ?? null}
-                        prStatus={results.pr_status}
-                        prError={results.pr_error}
-                      />
-                    )}
-                  </ErrorBoundary>
-                </TabsContent>
-              </Tabs>
+            {phase === "idle" && (
+              <>
+                <RepoInput
+                  onAnalyze={handleAnalyze}
+                  isLoading={false}
+                  accessToken={(session as any)?.accessToken ?? null}
+                />
+                <div className="text-center py-20">
+                  <p className="text-lg text-light/30">Select a repository to get started</p>
+                  <p className="text-sm mt-2 text-light/20">
+                    We&apos;ll analyze the codebase, benchmark performance, and optimize bottlenecks
+                  </p>
+                </div>
+              </>
             )}
 
-            {phase === "idle" && (
-              <div className="text-center py-20">
-                <p className="text-lg text-light/30">Select a repository to get started</p>
-                <p className="text-sm mt-2 text-light/20">
-                  We&apos;ll analyze the codebase, benchmark performance, and optimize bottlenecks
-                </p>
+            {isRunning && (
+              <div className="flex flex-col items-center justify-center py-20">
+                <ProgressStepper phase={phase} currentMessage={lastMessage} />
+              </div>
+            )}
+
+            {phase === "error" && (
+              <div className="flex flex-col items-center justify-center py-20 gap-4">
+                <p className="text-accent-red font-mono text-sm">{error}</p>
+                <button
+                  onClick={handleRetry}
+                  className="text-sm font-mono text-accent-blue hover:underline"
+                >
+                  ← Try again
+                </button>
               </div>
             )}
           </div>
@@ -318,7 +197,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <span
               className={`w-2.5 h-2.5 rounded-full ${
-                phase === "idle" || phase === "complete"
+                phase === "idle"
                   ? "bg-accent-green"
                   : phase === "error"
                   ? "bg-accent-red"
