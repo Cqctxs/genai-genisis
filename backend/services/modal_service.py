@@ -4,9 +4,9 @@ import traceback
 
 import modal
 
-BENCHMARK_TIMEOUT = 120
-DEP_INSTALL_TIMEOUT = 120
-FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + DEP_INSTALL_TIMEOUT + 30  # headroom
+BENCHMARK_TIMEOUT = 15
+DEP_INSTALL_TIMEOUT = 45
+FUNCTION_TIMEOUT = BENCHMARK_TIMEOUT + DEP_INSTALL_TIMEOUT + 15  # headroom
 
 app = modal.App("codemark-benchmarks")
 
@@ -224,13 +224,33 @@ def _run_python_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     with open(os.path.join(workdir, "_benchmark.py"), "w") as f:
         f.write(PYTHON_MEMORY_WRAPPER)
 
-    result = subprocess.run(
-        ["python", os.path.join(workdir, "_benchmark.py")],
-        capture_output=True,
-        text=True,
-        timeout=BENCHMARK_TIMEOUT,
-        cwd=workdir,
-    )
+    for _ in range(3):
+        result = subprocess.run(
+            ["python", os.path.join(workdir, "_benchmark.py")],
+            capture_output=True,
+            text=True,
+            timeout=BENCHMARK_TIMEOUT,
+            cwd=workdir,
+        )
+        if result.returncode != 0 and "ModuleNotFoundError" in result.stderr:
+            m = re.search(
+                r"ModuleNotFoundError: No module named '([^']+)'", result.stderr
+            )
+            if m:
+                missing_pkg = m.group(1)
+                pkg_map = {
+                    "PIL": "pillow",
+                    "yaml": "pyyaml",
+                    "bs4": "beautifulsoup4",
+                    "dotenv": "python-dotenv",
+                    "cv2": "opencv-python",
+                }
+                install_pkg = pkg_map.get(missing_pkg, missing_pkg)
+                subprocess.run(
+                    ["pip", "install", install_pkg], cwd=workdir, capture_output=True
+                )
+                continue
+        break
 
     return {
         "stdout": result.stdout,
@@ -269,13 +289,41 @@ def _run_js_benchmark(code: str, repo_files: dict[str, str]) -> dict:
     with open(os.path.join(workdir, "_benchmark.js"), "w") as f:
         f.write(JS_MEMORY_WRAPPER)
 
-    result = subprocess.run(
-        ["node", os.path.join(workdir, "_benchmark.js")],
-        capture_output=True,
-        text=True,
-        timeout=BENCHMARK_TIMEOUT,
-        cwd=workdir,
-    )
+    for _ in range(3):
+        result = subprocess.run(
+            ["node", os.path.join(workdir, "_benchmark.js")],
+            capture_output=True,
+            text=True,
+            timeout=BENCHMARK_TIMEOUT,
+            cwd=workdir,
+        )
+        if result.returncode != 0 and "Cannot find module" in result.stderr:
+            m = re.search(r"Cannot find module '([^']+)'", result.stderr)
+            if m:
+                missing_pkg = m.group(1)
+                # handle scoped packages vs normal
+                if not missing_pkg.startswith("."):
+                    # extract root package name, ignoring subpaths like 'lodash/merge'
+                    root_pkg = missing_pkg.split("/")[0]
+                    if missing_pkg.startswith("@"):
+                        parts = missing_pkg.split("/")
+                        if len(parts) >= 2:
+                            root_pkg = f"{parts[0]}/{parts[1]}"
+
+                    subprocess.run(
+                        [
+                            "npm",
+                            "install",
+                            "--no-audit",
+                            "--no-fund",
+                            "--loglevel=error",
+                            root_pkg,
+                        ],
+                        cwd=workdir,
+                        capture_output=True,
+                    )
+                    continue
+        break
 
     return {
         "stdout": result.stdout,

@@ -48,7 +48,7 @@ class ReviewResult(BaseModel):
     summary: str = Field(description="One-sentence overall assessment")
 
 
-REVIEW_TIMEOUT_S = 45
+REVIEW_TIMEOUT_S = 15
 
 
 async def review_optimization(
@@ -94,7 +94,9 @@ Review each change. Be strict about correctness but pragmatic about style."""
 
     try:
         result = await asyncio.wait_for(
-            run_agent_logged(agent, prompt, node_name=f"review_{file_path.split('/')[-1]}"),
+            run_agent_logged(
+                agent, prompt, node_name=f"review_{file_path.split('/')[-1]}"
+            ),
             timeout=REVIEW_TIMEOUT_S,
         )
         review: ReviewResult = result.output  # type: ignore[assignment]

@@ -160,7 +160,7 @@ class TestBenchmarkBatching:
             patch("agent.nodes.analyzer.run_agent_logged", new_callable=AsyncMock, return_value=mock_result) as mock_run,
         ):
             scripts = await _generate_benchmark_batch(
-                hotspots, "python", {"functions": [], "classes": [], "imports": []}, batch_index=0,
+                hotspots, "python", {"functions": [], "classes": [], "imports": []}, batch_index=0, repo_files={}
             )
             assert len(scripts) == 3
             assert scripts[0].target_function == "fn_a"
@@ -180,7 +180,7 @@ class TestBenchmarkBatching:
             patch("agent.nodes.analyzer.run_agent_logged", new_callable=AsyncMock, return_value=mock_result),
         ):
             await _generate_benchmark_batch(
-                hotspots, "python", {"functions": [], "classes": [], "imports": []}, batch_index=0,
+                hotspots, "python", {"functions": [], "classes": [], "imports": []}, batch_index=0, repo_files={}
             )
             output_type_arg = mock_get_agent.call_args[0][0]
             assert output_type_arg is BenchmarkBatch
@@ -196,7 +196,7 @@ class TestBenchmarkBatching:
             patch("agent.nodes.analyzer.run_agent_logged", new_callable=AsyncMock, side_effect=RuntimeError("API error")),
         ):
             scripts = await _generate_benchmark_batch(
-                hotspots, "python", {"functions": [], "classes": [], "imports": []}, batch_index=0,
+                hotspots, "python", {"functions": [], "classes": [], "imports": []}, batch_index=0, repo_files={}
             )
             assert scripts == []
 
@@ -215,7 +215,7 @@ class TestBenchmarkBatching:
             patch("agent.nodes.analyzer.run_agent_logged", new_callable=AsyncMock, return_value=mock_result) as mock_run,
         ):
             await _generate_benchmark_batch(
-                hotspots, "python", {"functions": [], "classes": [], "imports": []}, batch_index=0,
+                hotspots, "python", {"functions": [], "classes": [], "imports": []}, batch_index=0, repo_files={}
             )
             prompt_arg = mock_run.call_args[0][1]
             assert "alpha" in prompt_arg

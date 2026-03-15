@@ -20,6 +20,7 @@ def _output_type_label(output_type: type) -> str:
     name = getattr(output_type, "__name__", None)
     return name if name else str(output_type)
 
+
 PRO_SETTINGS = GoogleModelSettings(
     google_thinking_config={"thinking_level": ThinkingLevel.MEDIUM},
 )
@@ -32,7 +33,10 @@ THINKING_SETTINGS = GoogleModelSettings(
     google_thinking_config={"thinking_level": ThinkingLevel.HIGH},
 )
 
-def get_agent(output_type: type, system_prompt: str, model: str = GEMINI_FLASH) -> Agent:
+
+def get_agent(
+    output_type: type, system_prompt: str, model: str = GEMINI_FLASH
+) -> Agent:
     """Create a PydanticAI agent configured for the given output schema."""
     agent = Agent(
         model,
@@ -75,11 +79,13 @@ async def run_agent_logged(
 ) -> AgentRunResult:
     """Run a PydanticAI agent with detailed logging of inputs and outputs."""
     system_prompt = getattr(agent, "_codemark_system_prompt", "<unavailable>")
-    model_str = getattr(agent, '_model_str', 'unknown')
+    model_str = getattr(agent, "_model_str", "unknown")
     output_type = getattr(agent, "_codemark_output_type", "unknown")
 
     settings = model_settings
-    thinking_config = getattr(settings, "google_thinking_config", None) if settings else None
+    thinking_config = (
+        getattr(settings, "google_thinking_config", None) if settings else None
+    )
     thinking_level = thinking_config.get("thinking_level") if thinking_config else None
 
     log_block(
@@ -99,21 +105,48 @@ async def run_agent_logged(
     )
 
     start = time.monotonic()
-    try:
-        result = await agent.run(prompt, model_settings=settings)
-    except Exception as e:
-        elapsed = time.monotonic() - start
-        log_block(
-            f"GEMINI ERROR [{node_name}]",
-            metadata={
-                "model": model_str,
-                "error_type": type(e).__name__,
-                "elapsed_s": round(elapsed, 2),
-            },
-            sections={"ERROR": str(e)},
-            color="red",
-        )
-        raise
+
+    max_retries = 3
+    base_delay = 2
+    for attempt in range(max_retries):
+        try:
+            result = await agent.run(prompt, model_settings=settings)
+            break
+        except Exception as e:
+            error_str = str(e).lower()
+            if attempt < max_retries - 1 and (
+                "429" in error_str
+                or "quota" in error_str
+                or "too many requests" in error_str
+                or "timeout" in error_str
+                or "503" in error_str
+                or "502" in error_str
+                or "overloaded" in error_str
+            ):
+                delay = base_delay * (2**attempt)
+                log.warning(
+                    f"gemini_api_retry [{node_name}]",
+                    attempt=attempt + 1,
+                    error=str(e),
+                    delay_s=delay,
+                )
+                import asyncio
+
+                await asyncio.sleep(delay)
+                continue
+
+            elapsed = time.monotonic() - start
+            log_block(
+                f"GEMINI ERROR [{node_name}]",
+                metadata={
+                    "model": model_str,
+                    "error_type": type(e).__name__,
+                    "elapsed_s": round(elapsed, 2),
+                },
+                sections={"ERROR": str(e)},
+                color="red",
+            )
+            raise
 
     elapsed = time.monotonic() - start
     output = result.output

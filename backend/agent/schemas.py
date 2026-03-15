@@ -8,6 +8,30 @@ class FunctionInfo(BaseModel):
     line_end: int
     params: list[str] = Field(default_factory=list)
     calls: list[str] = Field(default_factory=list)
+    parameter_types: dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping of parameter name to its resolved type annotation",
+    )
+    return_type: str = Field(
+        default="",
+        description="Resolved return type annotation (empty string if unknown)",
+    )
+    decorators: list[str] = Field(
+        default_factory=list,
+        description="Decorator names applied to this function (e.g. ['staticmethod', 'app.route'])",
+    )
+    is_async: bool = Field(
+        default=False,
+        description="Whether this function is declared async",
+    )
+    is_generator: bool = Field(
+        default=False,
+        description="Whether this function contains yield/yield from",
+    )
+    docstring: str = Field(
+        default="",
+        description="Leading docstring or JSDoc comment for the function",
+    )
 
 
 class ClassInfo(BaseModel):
@@ -16,6 +40,14 @@ class ClassInfo(BaseModel):
     line_start: int
     line_end: int
     methods: list[str] = Field(default_factory=list)
+    bases: list[str] = Field(
+        default_factory=list,
+        description="Base class / superclass names",
+    )
+    decorators: list[str] = Field(
+        default_factory=list,
+        description="Decorator names applied to this class",
+    )
 
 
 class ImportInfo(BaseModel):
@@ -32,6 +64,31 @@ class ASTData(BaseModel):
         default_factory=list,
         description="Pairs of (caller_function, callee_function)",
     )
+
+
+# Fields that add escaped-quote noise to LLM prompts and aren't needed
+# for benchmark generation or similar code-generation tasks.
+_VERBOSE_FUNCTION_FIELDS = {"docstring", "decorators", "is_async", "is_generator"}
+_VERBOSE_CLASS_FIELDS = {"decorators"}
+
+
+def slim_ast_for_prompt(ast_map: dict) -> dict:
+    """Return a copy of ast_map with verbose / quote-heavy fields stripped.
+
+    Prevents JSON-escaped quotes in docstrings and decorator strings from
+    contaminating LLM-generated code (e.g. benchmark scripts).
+    """
+    def _slim_func(f: dict) -> dict:
+        return {k: v for k, v in f.items() if k not in _VERBOSE_FUNCTION_FIELDS}
+
+    def _slim_class(c: dict) -> dict:
+        return {k: v for k, v in c.items() if k not in _VERBOSE_CLASS_FIELDS}
+
+    return {
+        **ast_map,
+        "functions": [_slim_func(f) for f in ast_map.get("functions", [])],
+        "classes": [_slim_class(c) for c in ast_map.get("classes", [])],
+    }
 
 
 class Hotspot(BaseModel):

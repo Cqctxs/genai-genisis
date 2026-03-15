@@ -3,7 +3,14 @@ import json
 
 import structlog
 
-from agent.schemas import AnalysisResult, BenchmarkBatch, BenchmarkScript, Hotspot, TriageChunk, TriageResult
+from agent.schemas import (
+    AnalysisResult,
+    BenchmarkBatch,
+    BenchmarkScript,
+    Hotspot,
+    TriageChunk,
+    TriageResult,
+)
 from agent.state import AgentState
 from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 from services.log_utils import log_block
@@ -173,7 +180,8 @@ async def parse_ast_node(state: AgentState) -> dict:
         **state,
         "file_tree": file_tree,
         "ast_map": ast_data.model_dump(),
-        "messages": state.get("messages", []) + [
+        "messages": state.get("messages", [])
+        + [
             f"Parsed {len(ast_data.functions)} functions, {len(ast_data.classes)} classes across {len(file_tree)} files"
         ],
     }
@@ -201,13 +209,22 @@ Scan this codebase and group files into priority-ranked chunks for deep performa
         "triage_complete",
         language=triage.language,
         num_chunks=len(triage.chunks),
-        chunks=[{"id": c.chunk_id, "label": c.label, "files": len(c.files), "priority": c.priority} for c in triage.chunks],
+        chunks=[
+            {
+                "id": c.chunk_id,
+                "label": c.label,
+                "files": len(c.files),
+                "priority": c.priority,
+            }
+            for c in triage.chunks
+        ],
     )
 
     return {
         **state,
         "triage_result": triage.model_dump(),
-        "messages": state.get("messages", []) + [
+        "messages": state.get("messages", [])
+        + [
             f"Triage: identified {len(triage.chunks)} code chunks across {triage.total_files_scanned} files"
         ],
     }
@@ -235,9 +252,15 @@ async def _analyze_chunk(
 
     chunk_file_set = set(chunk.files)
     filtered_ast = {
-        "functions": [f for f in ast_map.get("functions", []) if f.get("file") in chunk_file_set],
-        "classes": [c for c in ast_map.get("classes", []) if c.get("file") in chunk_file_set],
-        "imports": [i for i in ast_map.get("imports", []) if i.get("file") in chunk_file_set],
+        "functions": [
+            f for f in ast_map.get("functions", []) if f.get("file") in chunk_file_set
+        ],
+        "classes": [
+            c for c in ast_map.get("classes", []) if c.get("file") in chunk_file_set
+        ],
+        "imports": [
+            i for i in ast_map.get("imports", []) if i.get("file") in chunk_file_set
+        ],
         "call_edges": ast_map.get("call_edges", []),
     }
 
@@ -259,7 +282,9 @@ Triage reasoning: {chunk.reasoning}
     prompt += f"\nThe language is: {language}"
 
     try:
-        result = await run_agent_logged(agent, prompt, node_name=f"analyze_chunk_{chunk.chunk_id}")
+        result = await run_agent_logged(
+            agent, prompt, node_name=f"analyze_chunk_{chunk.chunk_id}"
+        )
         analysis: AnalysisResult = result.output  # type: ignore[assignment]
         log.info(
             "chunk_analyzed",
@@ -280,6 +305,7 @@ async def _generate_benchmark_batch(
     language: str,
     ast_map: dict,
     batch_index: int,
+    repo_files: dict[str, str],
 ) -> list[BenchmarkScript]:
     """Generate benchmark scripts for a batch of hotspots in a single API call."""
     agent = get_agent(BenchmarkBatch, BENCHMARK_PROMPT, GEMINI_FLASH)
@@ -287,10 +313,19 @@ async def _generate_benchmark_batch(
     hotspot_sections = []
     for idx, hotspot in enumerate(hotspots):
         filtered_ast = {
-            "functions": [f for f in ast_map.get("functions", []) if f.get("file") == hotspot.file],
-            "classes": [c for c in ast_map.get("classes", []) if c.get("file") == hotspot.file],
-            "imports": [imp for imp in ast_map.get("imports", []) if imp.get("file") == hotspot.file],
+            "functions": [
+                f for f in ast_map.get("functions", []) if f.get("file") == hotspot.file
+            ],
+            "classes": [
+                c for c in ast_map.get("classes", []) if c.get("file") == hotspot.file
+            ],
+            "imports": [
+                imp
+                for imp in ast_map.get("imports", [])
+                if imp.get("file") == hotspot.file
+            ],
         }
+        file_content = repo_files.get(hotspot.file, "(File content not found)")[:15000]
         hotspot_sections.append(
             f"### Hotspot {idx + 1}\n"
             f"- Function: {hotspot.function_name}\n"
@@ -298,18 +333,20 @@ async def _generate_benchmark_batch(
             f"- Severity: {hotspot.severity}\n"
             f"- Category: {hotspot.category}\n"
             f"- Reasoning: {hotspot.reasoning}\n\n"
+            f"#### Original File Content ({hotspot.file})\n```\n{file_content}\n```\n\n"
             f"#### AST Context\n```json\n{json.dumps(filtered_ast, indent=2)[:3000]}\n```"
         )
 
     prompt = (
         f"Generate a profiling script for EACH of the following {len(hotspots)} hotspot(s).\n"
         f"Return exactly {len(hotspots)} BenchmarkScript object(s) in the `scripts` list.\n\n"
-        f"The language is: {language}\n\n"
-        + "\n\n".join(hotspot_sections)
+        f"The language is: {language}\n\n" + "\n\n".join(hotspot_sections)
     )
 
     try:
-        result = await run_agent_logged(agent, prompt, node_name=f"gen_bench_batch_{batch_index}")
+        result = await run_agent_logged(
+            agent, prompt, node_name=f"gen_bench_batch_{batch_index}"
+        )
         batch: BenchmarkBatch = result.output  # type: ignore[assignment]
         log.info(
             "benchmark_batch_generated",
@@ -359,7 +396,9 @@ async def _process_chunk_stream(
     )
 
     # Step 2: Generate benchmarks for these hotspots
-    benchmarks = await _generate_benchmark_batch(hotspots, language, ast_map, chunk_index)
+    benchmarks = await _generate_benchmark_batch(
+        hotspots, language, ast_map, chunk_index, repo_files
+    )
     if not benchmarks:
         return hotspots, [], []
 
@@ -410,11 +449,18 @@ async def chunk_analyze_node(state: AgentState) -> dict:
     )
 
     repo_files: dict[str, str] = {}
-    for f in file_tree[:30]:
+    for f in file_tree:
         try:
             repo_files[f] = read_file(repo_path, f)
         except Exception:
             pass
+
+    for manifest in ("requirements.txt", "package.json"):
+        if manifest not in repo_files:
+            try:
+                repo_files[manifest] = read_file(repo_path, manifest)
+            except Exception:
+                pass
 
     stream_tasks = [
         _process_chunk_stream(chunk, ast_map, repo_path, triage.language, i, repo_files)
@@ -472,7 +518,8 @@ async def chunk_analyze_node(state: AgentState) -> dict:
         "analysis": analysis.model_dump(),
         "benchmark_code": all_benchmarks,
         "initial_results": all_results,
-        "messages": state.get("messages", []) + [
+        "messages": state.get("messages", [])
+        + [
             f"Streamed analysis: {len(all_hotspots)} hotspots across {len(chunks)} chunks",
             f"Generated and ran {len(all_benchmarks)} benchmarks",
         ],
