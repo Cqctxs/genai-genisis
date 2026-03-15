@@ -3,7 +3,7 @@ import json
 
 import structlog
 
-from agent.schemas import AnalysisResult, BenchmarkScript, Hotspot
+from agent.schemas import AnalysisResult, BenchmarkScript, Hotspot, slim_ast_for_prompt
 from agent.state import AgentState
 from services.gemini_service import GEMINI_FLASH, get_agent, run_agent_logged
 
@@ -131,12 +131,12 @@ async def _generate_single_benchmark(
     """Generate a benchmark script for a single hotspot."""
     agent = get_agent(BenchmarkScript, BENCHMARK_PROMPT, GEMINI_FLASH)
 
-    # Filter AST to relevant file
-    filtered_ast = {
+    # Filter AST to relevant file and strip verbose fields
+    filtered_ast = slim_ast_for_prompt({
         "functions": [f for f in ast_map.get("functions", []) if f.get("file") == hotspot.file],
         "classes": [c for c in ast_map.get("classes", []) if c.get("file") == hotspot.file],
         "imports": [i for i in ast_map.get("imports", []) if i.get("file") == hotspot.file],
-    }
+    })
 
     prompt = f"""## Hotspot
 - Function: {hotspot.function_name}

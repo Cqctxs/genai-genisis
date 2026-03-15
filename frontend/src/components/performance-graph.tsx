@@ -674,15 +674,6 @@ export function PerformanceGraph({ graphData }: PerformanceGraphProps) {
             fitView
             proOptions={{ hideAttribution: true }}
           >
-            <Background color="rgba(245, 240, 232, 0.06)" gap={20} />
-            <Controls />
-            <MiniMap
-              nodeColor={(n) => {
-                const gn = graphData.nodes.find((gn) => gn.id === n.id);
-                const nodeType = gn?.node_type || "function";
-                return NODE_TYPE_CONFIG[nodeType]?.accent || "rgba(245,240,232,0.15)";
-              }}
-            />
           </ReactFlow>
         </div>
       </CardContent>
