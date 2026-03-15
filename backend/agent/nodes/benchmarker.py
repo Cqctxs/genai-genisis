@@ -24,6 +24,7 @@ The benchmark script runs inside an isolated sandbox where:
 - If a function requires database connections, network I/O, or external services to run,
   create minimal mock/stub data so the function's core logic can still execute.
   **CRITICAL**: If you are mocking an I/O bound external call (like network or DB), your mock MUST include realistic artificial latency (e.g., `time.sleep(0.05)` or `await new Promise(r => setTimeout(r, 50))`) so concurrency optimizations can demonstrate actual speedup without pure CPU lock overhead.
+- If you mock functions using `unittest.mock.patch`, you MUST import the module you are patching FIRST. (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Otherwise it will fail with AttributeError.
 
 ## Rules
 

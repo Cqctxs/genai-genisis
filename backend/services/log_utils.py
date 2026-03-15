@@ -27,6 +27,7 @@ def log_block(
         color: ANSI color name for the banner — "blue", "green", "yellow", "magenta", "cyan".
         max_section_chars: Truncate section content to this length. None disables truncation.
     """
+    return
     ansi = {
         "blue": "\033[94m",
         "green": "\033[92m",

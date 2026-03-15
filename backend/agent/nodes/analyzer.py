@@ -79,6 +79,7 @@ CRITICAL SANDBOX CONSTRAINTS:
   Doing so will crash the container.
 - You MUST import the target function from the repo using the exact file path provided in the "File:" section. For instance, if the file is `advanced_demo/data_generator.py`, use `from advanced_demo.data_generator import function_name` in Python or `require('./advanced_demo/data_generator')` in JS. Do NOT use fake names like `from hotspot_1`.
 - Create mock/stub data instead of importing real modules when measuring pure logic.
+- If you mock functions using `unittest.mock.patch`, you MUST import the module you are patching FIRST. (e.g. if you patch `advanced_demo.main.os.path.exists`, you MUST do `import advanced_demo.main` before the patch). Otherwise it will fail with AttributeError.
   CRITICAL JSON & ESCAPING CONSTRAINTS:
   - Do NOT generate ANY docstrings or comments inside the Python/JS code.
   - Do NOT use triple quotes (`\"\"\"` or `'''`) anywhere in the script to prevent JSON deserialization syntax errors.
